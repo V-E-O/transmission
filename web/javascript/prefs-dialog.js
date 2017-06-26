@@ -242,6 +242,8 @@ function PrefsDialog(remote) {
         transmission.hideMobileAddressbar();
 
         $(data.dialog).trigger('closed', getValues());
+		transmission.initializeTorrents();
+		transmission.refilter(true);
     };
 
     /****
@@ -302,15 +304,19 @@ function PrefsDialog(remote) {
         data.elements.root.dialog('open');
     };
 
-    this.close = function ()
-    {
-        transmission.hideMobileAddressbar();
-        data.elements.root.dialog('close');
-    },
-
     this.shouldAddedTorrentsStart = function()
     {
         return data.elements.root.find('#start-added-torrents')[0].checked;
+    };
+
+    this.globalSeedRatioLimit = function()
+    {
+        return getValue(data.elements.root.find('#seedRatioLimit')) + 0.0;
+    };
+
+    this.globalSeedRatioLimited = function()
+    {
+        return data.elements.root.find('#seedRatioLimited')[0].checked;
     };
 
     data.dialog = this;

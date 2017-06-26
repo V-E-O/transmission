@@ -5,42 +5,70 @@
  * http://www.gnu.org/licenses/old-licenses/gpl-2.0.html
  */
 
-function FileRow(torrent, depth, name, indices, even)
+function FileRow(torrent, i)
 {
 	var fields = {
 		have: 0,
-		indices: [],
+		index: 0,
+		isDirty: false,
 		isWanted: true,
-		priorityLow: false,
-		priorityNormal: false,
-		priorityHigh: false,
+		priority: 0,
 		me: this,
 		size: 0,
 		torrent: null
 	},
 
 	elements = {
-		priority_low_button: null,
-		priority_normal_button: null,
-		priority_high_button: null,
+		priority_control: null,
 		progress: null,
 		root: null
 	},
 
-	initialize = function(torrent, depth, name, indices, even) {
+	initialize = function(torrent, i) {
 		fields.torrent = torrent;
-		fields.indices = indices;
-		createRow(torrent, depth, name, even);
+		fields.index = i;
+		createRow(torrent, i);
+	},
+
+	readAttributes = function(file) {
+		if (fields.have !== file.bytesCompleted) {
+			fields.have = file.bytesCompleted;
+			fields.isDirty = true;
+		}
+		if (fields.size !== file.length) {
+			fields.size = file.length;
+			fields.isDirty = true;
+		}
+		if (fields.priority !== file.priority) {
+			fields.priority = file.priority;
+			fields.isDirty = true;
+		}
+		if (fields.isWanted !== file.wanted) {
+			fields.isWanted = file.wanted;
+			fields.isDirty = true;
+		}
 	},
 
 	refreshWantedHTML = function()
 	{
-		var e = $(elements.root);
-		e.toggleClass('skip', !fields.isWanted);
-		e.toggleClass('complete', isDone());
-		// allow always DND
-		// $(e[0].checkbox).prop('disabled', !isEditable());
-		$(e[0].checkbox).prop('checked', fields.isWanted);
+		var e = elements.root,
+		    c = [ e.classNameConst ];
+
+		if (!fields.isWanted) { c.push('skip'); }
+//		if (isDone()) { c.push('complete'); }
+		e.className = c.join(' ');
+	},
+	refreshPriorityHTML = function()
+	{
+		var e = elements.priority_control,
+		    c = [ e.classNameConst ];
+
+		switch(fields.priority) {
+			case -1 : c.push('low'); break;
+			case 1  : c.push('high'); break;
+			default : c.push('normal'); break;
+		}
+		e.className = c.join(' ');
 	},
 	refreshProgressHTML = function()
 	{
@@ -51,134 +79,90 @@ function FileRow(torrent, depth, name, indices, even)
 			  ' (',
 			  Transmission.fmt.percentString(pct),
 			  '%)' ].join('');
-		setTextContent(elements.progress, c);
+		setInnerHTML(elements.progress, c);
 	},
-	refreshImpl = function() {
-		var i,
-		    file,
-		    have = 0,
-		    size = 0,
-		    wanted = false,
-		    low = false,
-		    normal = false,
-		    high = false;
-
-		// loop through the file_indices that affect this row
-		for (i=0; i<fields.indices.length; ++i) {
-			file = fields.torrent.getFile (fields.indices[i]);
-			have += file.bytesCompleted;
-			size += file.length;
-			wanted |= file.wanted;
-			switch (file.priority) {
-				case -1: low = true; break;
-				case  0: normal = true; break;
-				case  1: high = true; break;
-			}
-		}
-
-		if ((fields.have != have) || (fields.size != size)) {
-			fields.have = have;
-			fields.size = size;
+	refreshHTML = function() {
+		if (fields.isDirty) {
+			fields.isDirty = false;
 			refreshProgressHTML();
-		}
-
-		if (fields.isWanted !== wanted) {
-			fields.isWanted = wanted;
 			refreshWantedHTML();
+			refreshPriorityHTML();
 		}
-
-		if (fields.priorityLow !== low) {
-			fields.priorityLow = low;
-			$(elements.priority_low_button).toggleClass('selected', low);
-		}
-
-		if (fields.priorityNormal !== normal) {
-			fields.priorityNormal = normal;
-			$(elements.priority_normal_button).toggleClass('selected', normal);
-		}
-
-		if (fields.priorityHigh !== high) {
-			fields.priorityHigh = high;
-			$(elements.priority_high_button).toggleClass('selected', high);
-		}
+	},
+	refresh = function() {
+		readAttributes(fields.torrent.getFile(fields.index));
+		refreshHTML();
 	},
 
 	isDone = function () {
 		return fields.have >= fields.size;
 	},
-	// allow always DND
-	// isEditable = function () {
-		// return (fields.torrent.getFileCount()>1) && !isDone();
-	// },
 
-	createRow = function(torrent, depth, name, even) {
-		var e, root, box;
+	createRow = function(torrent, i) {
+		var file = torrent.getFile(i),
+		    name, root, wanted_div, pri_div, file_div, prog_div;
 
 		root = document.createElement('li');
-		root.className = 'inspector_torrent_file_list_entry' + (even?'even':'odd');
+		root.id = 't' + fields.torrent.getId() + 'f' + fields.index;
+		root.classNameConst = 'inspector_torrent_file_list_entry ' + ((i%2)?'odd':'even');
+		root.className = root.classNameConst;
+
+		wanted_div = document.createElement('div');
+		wanted_div.className = "file_wanted_control";
+		$(wanted_div).click(function(){ fireWantedChanged(!fields.isWanted); });
+
+		pri_div = document.createElement('div');
+		pri_div.classNameConst = "file_priority_control";
+		pri_div.className = pri_div.classNameConst;
+		$(pri_div).bind('click',function(ev){
+			var prio,
+			    x = ev.pageX,
+			    e = ev.target;
+			while (e) {
+				x -= e.offsetLeft;
+				e = e.offsetParent;
+			}
+			// ugh.
+			if (isMobileDevice) {
+				if (x < 8) prio = -1;
+				else if (x < 27) prio = 0;
+				else prio = 1;
+			} else {
+				if (x < 12) prio = -1;
+				else if (x < 23) prio = 0;
+				else prio = 1;
+			}
+			firePriorityChanged(prio);
+		});
+
+		name = file.name || 'Unknown';
+		name = name.substring(name.lastIndexOf('/')+1);
+		name = name.replace(/([\/_\.])/g, "$1&#8203;");
+		file_div = document.createElement('div');
+		file_div.className = "inspector_torrent_file_list_entry_name";
+		file_div.innerHTML = name;
+
+		prog_div = document.createElement('div');
+		prog_div.className = "inspector_torrent_file_list_entry_progress";
+
+		root.appendChild(wanted_div);
+		root.appendChild(pri_div);
+		root.appendChild(file_div);
+		root.appendChild(prog_div);
+
 		elements.root = root;
+		elements.priority_control = pri_div;
+		elements.progress = prog_div;
 
-		e = document.createElement('input');
-		e.type = 'checkbox';
-		e.className = "file_wanted_control";
-		e.title = 'Download file';
-		$(e).change(function(ev){ fireWantedChanged( $(ev.currentTarget).prop('checked')); });
-		root.checkbox = e;
-		root.appendChild(e);
-
-		e = document.createElement('div');
-		e.className = 'file-priority-radiobox';
-		box = e;
-
-			e = document.createElement('div');
-			e.className = 'low';
-			e.title = 'Low Priority';
-			$(e).click(function(){ firePriorityChanged(-1); });
-			elements.priority_low_button = e;
-			box.appendChild(e);
-
-			e = document.createElement('div');
-			e.className = 'normal';
-			e.title = 'Normal Priority';
-			$(e).click(function(){ firePriorityChanged(0); });
-			elements.priority_normal_button = e;
-			box.appendChild(e);
-
-			e = document.createElement('div');
-			e.title = 'High Priority';
-			e.className = 'high';
-			$(e).click(function(){ firePriorityChanged(1); });
-			elements.priority_high_button = e;
-			box.appendChild(e);
-
-		root.appendChild(box);
-
-		e = document.createElement('div');
-		e.className = "inspector_torrent_file_list_entry_name";
-		setTextContent(e, name);
-		$(e).click(function(){ fireNameClicked(-1); });
-		root.appendChild(e);
-
-		e = document.createElement('div');
-		e.className = "inspector_torrent_file_list_entry_progress";
-		root.appendChild(e);
-		$(e).click(function(){ fireNameClicked(-1); });
-		elements.progress = e;
-
-		$(root).css('margin-left', '' + (depth*16) + 'px');
-
-		refreshImpl();
+		refresh();
 		return root;
 	},
 
 	fireWantedChanged = function(do_want) {
-		$(fields.me).trigger('wantedToggled',[ fields.indices, do_want ]);
+		$(fields.me).trigger('wantedToggled',[ fields.me, do_want ]);
 	},
 	firePriorityChanged = function(priority) {
-		$(fields.me).trigger('priorityToggled',[ fields.indices, priority ]);
-	},
-	fireNameClicked = function() {
-		$(fields.me).trigger('nameClicked',[ fields.me, fields.indices ]);
+		$(fields.me).trigger('priorityToggled',[ fields.me, priority ]);
 	};
 
 	/***
@@ -188,9 +172,12 @@ function FileRow(torrent, depth, name, indices, even)
 	this.getElement = function() {
 		return elements.root;
 	};
-	this.refresh = function() {
-		refreshImpl();
+	this.getIndex = function() {
+		return fields.index;
+	};
+	this.isEditable = function () {
+		return (fields.torrent.getFileCount()>1) && !isDone();
 	};
 
-	initialize(torrent, depth, name, indices, even);
+	initialize(torrent, i);
 };

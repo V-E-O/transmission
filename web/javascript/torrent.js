@@ -56,6 +56,9 @@ Torrent.Fields.Metadata = [
 
 // commonly used fields which need to be periodically refreshed
 Torrent.Fields.Stats = [
+	'streamingMode',
+	'cheatMode',
+	'downloadDir',
 	'error',
 	'errorString',
 	'eta',
@@ -76,10 +79,8 @@ Torrent.Fields.Stats = [
 	'sizeWhenDone',
 	'status',
 	'trackers',
-	'downloadDir',
 	'uploadedEver',
-	'uploadRatio',
-	'webseedsSendingToUs'
+	'uploadRatio'
 ];
 
 // fields used by the inspector which only need to be loaded once
@@ -96,16 +97,16 @@ Torrent.Fields.InfoExtra = [
 
 // fields used in the inspector which need to be periodically refreshed
 Torrent.Fields.StatsExtra = [
-	'activityDate',
-	'corruptEver',
+	'streamingMode',
+	'cheatMode',
 	'desiredAvailable',
 	'downloadedEver',
 	'fileStats',
 	'haveUnchecked',
 	'haveValid',
 	'peers',
-	'startDate',
-	'trackerStats'
+	'trackerStats',
+	'webseedsSendingToUs'
 ];
 
 /***
@@ -119,26 +120,13 @@ Torrent.prototype =
 	initialize: function(data)
 	{
 		this.fields = {};
-		this.fieldObservers = {};
 		this.refresh (data);
-	},
-
-	notifyOnFieldChange: function(field, callback) {
-		this.fieldObservers[field] = this.fieldObservers[field] || [];
-		this.fieldObservers[field].push(callback);
 	},
 
 	setField: function(o, name, value)
 	{
-		var i, observer;
-		
 		if (o[name] === value)
 			return false;
-		if (o == this.fields && this.fieldObservers[name] && this.fieldObservers[name].length) {
-			for (i=0; observer=this.fieldObservers[name][i]; ++i) {
-				observer.call(this, value, o[name], name);
-			}
-		}
 		o[name] = value;
 		return true;
 	},
@@ -219,15 +207,12 @@ Torrent.prototype =
 	getError: function() { return this.fields.error; },
 	getErrorString: function() { return this.fields.errorString; },
 	getETA: function() { return this.fields.eta; },
-	getFailedEver: function(i) { return this.fields.corruptEver; },
 	getFile: function(i) { return this.fields.files[i]; },
 	getFileCount: function() { return this.fields.files ? this.fields.files.length : 0; },
 	getHashString: function() { return this.fields.hashString; },
-	getHave: function() { return this.getHaveValid() + this.getHaveUnchecked() },
-	getHaveUnchecked: function() { return this.fields.haveUnchecked; },
 	getHaveValid: function() { return this.fields.haveValid; },
+	getHave: function() { return this.getHaveValid() + this.fields.haveUnchecked; },
 	getId: function() { return this.fields.id; },
-	getLastActivity: function() { return this.fields.activityDate; },
 	getLeftUntilDone: function() { return this.fields.leftUntilDone; },
 	getMetadataPercentComplete: function() { return this.fields.metadataPercentComplete; },
 	getName: function() { return this.fields.name || 'Unknown'; },
@@ -243,7 +228,6 @@ Torrent.prototype =
 	getSeedRatioLimit: function() { return this.fields.seedRatioLimit; },
 	getSeedRatioMode: function() { return this.fields.seedRatioMode; },
 	getSizeWhenDone: function() { return this.fields.sizeWhenDone; },
-	getStartDate: function() { return this.fields.startDate; },
 	getStatus: function() { return this.fields.status; },
 	getTotalSize: function() { return this.fields.totalSize; },
 	getTrackers: function() { return this.fields.trackers; },
@@ -252,6 +236,9 @@ Torrent.prototype =
 	getUploadedEver: function() { return this.fields.uploadedEver; },
 	getWebseedsSendingToUs: function() { return this.fields.webseedsSendingToUs; },
 	isFinished: function() { return this.fields.isFinished; },
+	getStreamingMode: function() { return this.fields.streamingMode; },
+	getCheatMode: function() { return this.fields.cheatMode; },
+
 
 	// derived accessors
 	hasExtraInfo: function() { return 'hashString' in this.fields; },
@@ -278,12 +265,13 @@ Torrent.prototype =
 			default:                            return 'Error';
 		}
 	},
+
 	seedRatioLimit: function(controller){
-		switch(this.getSeedRatioMode()) {
-			case Torrent._RatioUseGlobal: return controller.seedRatioLimit();
-			case Torrent._RatioUseLocal:  return this.getSeedRatioLimit();
-			default:                      return -1;
-		}
+	if ( this.getSeedRatioMode() === Torrent._RatioUseLocal )
+		return this.getSeedRatioLimit();
+	if ( this.getSeedRatioMode() === Torrent._RatioUseGlobal )
+		return controller.seedRatioLimit();
+	return -1;
 	},
 	getErrorMessage: function() {
 		var str = this.getErrorString();
@@ -310,6 +298,7 @@ Torrent.prototype =
 			f.collatedTrackers = this.collateTrackers(f.trackers);
 		return f.collatedTrackers || '';
 	},
+
 
 	/****
 	*****
@@ -421,14 +410,6 @@ Torrent.compareByProgress = function(ta, tb)
 	return (a - b) || Torrent.compareByRatio(ta, tb);
 };
 
-Torrent.compareBySize = function(ta, tb)
-{
-    var a = ta.getTotalSize(),
-        b = tb.getTotalSize();
-
-    return (a - b) || Torrent.compareByName(ta, tb);
-}
-
 Torrent.compareTorrents = function(a, b, sortMethod, sortDirection)
 {
 	var i;
@@ -447,9 +428,6 @@ Torrent.compareTorrents = function(a, b, sortMethod, sortDirection)
 		case Prefs._SortByProgress:
 			i = Torrent.compareByProgress(a,b);
 			break;
-        case Prefs._SortBySize:
-            i = Torrent.compareBySize(a,b);
-            break;
 		case Prefs._SortByState:
 			i = Torrent.compareByState(a,b);
 			break;
@@ -488,9 +466,6 @@ Torrent.sortTorrents = function(torrents, sortMethod, sortDirection)
 		case Prefs._SortByProgress:
 			torrents.sort(this.compareByProgress);
 			break;
-        case Prefs._SortBySize:
-            torrents.sort(this.compareBySize);
-            break;
 		case Prefs._SortByState:
 			torrents.sort(this.compareByState);
 			break;
