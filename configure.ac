@@ -505,7 +505,8 @@ AC_CONFIG_FILES([Makefile
                  web/style/transmission/images/Makefile
                  web/style/transmission/images/buttons/Makefile
                  web/javascript/Makefile
-                 web/javascript/jquery/Makefile])
+                 web/javascript/jquery/Makefile
+                 po/Makefile.in])
 
 AC_OUTPUT
 
