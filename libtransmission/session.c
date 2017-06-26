@@ -925,7 +925,7 @@ sessionSetImpl( void * vdata )
     if( tr_bencDictFindInt( settings, TR_PREFS_KEY_REVERIFY_TORRENTS, &i ) )
         session->reverifyTorrents = ( i > 0 ) ? i : 0 ;
     if( tr_bencDictFindInt( settings, TR_PREFS_KEY_CHEAT_MODE_DEFAULT, &i ) )
-        session->cheatModeDefault = ( ( i == 0 ) && ( i < 5 ) ) ? i : 0 ;
+        session->cheatModeDefault = ( ( i >= 0 ) ) ? i : 0 ;
     if( tr_bencDictFindInt( settings, TR_PREFS_KEY_STREAM_MODE_DEFAULT, &i ) )
         session->streamModeDefault = ( ( i >= 0 ) && ( i < 5 ) ) ? i : 0 ;
     if( tr_bencDictFindInt( settings, TR_PREFS_KEY_WEBSEED_MAX_CONNECT_FAILS, &i ) )
@@ -3090,7 +3090,7 @@ void
 tr_sessionSetCheatModeDefault( tr_session * session, tr_cheatMode_t cheatModeDefault )
 {
     assert( tr_isSession( session ) );
-    if( ( cheatModeDefault == TR_CHEAT_DEACT ) && ( cheatModeDefault < TR_CHEAT_COUNT ) )
+    if( ( cheatModeDefault >= TR_CHEAT_DEACT ) )
         session->cheatModeDefault = cheatModeDefault;
     else
         session->cheatModeDefault = TR_CHEAT_DEACT;

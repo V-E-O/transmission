@@ -940,6 +940,13 @@ letsCheat( const tr_tier * tier,
         *corrupt  = tier->byteCounts[TR_ANN_CORRUPT];
         *left     = tr_cpLeftUntilComplete( &tier->tor->completion );
     }
+    else if(cheatMode > TR_CHEAT_4RATIO) // report (download * cheatMode) upload
+    {
+        *up       = (int64_t)((cheatMode+tier->tor->cheatRand)*tier->byteCounts[TR_ANN_DOWN]);
+        *down     = tier->byteCounts[TR_ANN_DOWN];
+        *corrupt  = tier->byteCounts[TR_ANN_CORRUPT];
+        *left     = tr_cpLeftUntilComplete( &tier->tor->completion );
+    }
 }
 
 

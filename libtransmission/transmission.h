@@ -1416,7 +1416,6 @@ enum
     TR_CHEAT_ALWSEED   =  2, /* always leecher */
     TR_CHEAT_2RATIO    =  3, /* report a ratio of ~2 */
     TR_CHEAT_4RATIO    =  4, /* report a ratio of ~4 */
-    TR_CHEAT_COUNT
 };
 
 void           tr_torrentSetCheatMode( tr_torrent * tor, tr_cheatMode_t mode );

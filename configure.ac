@@ -205,22 +205,24 @@ AC_CHECK_LIB([rt],
 
 AC_MSG_CHECKING([µTP])
 build_utp="no"
-if test "x$CXX" = "x" ; then
-    have_utp="no"
-else
+if test "x$CXX" != "x" ; then
     have_utp="yes"
+else
+    have_utp="no"
 fi
 AC_ARG_ENABLE([utp],
               AS_HELP_STRING([--enable-utp],[build µTP support]),
               [want_utp=${enableval}],
               [want_utp=${have_utp}])
 if test "x$want_utp" = "xyes" ; then
-    if test "x$have_utp" = "xyes"; then 
+    if test "x$have_utp" = "xyes"; then
         LIBUTP_CFLAGS="-I\$(top_srcdir)/third-party/"
         LIBUTP_LIBS="\$(top_builddir)/third-party/libutp/libutp.a"
-	if test "x$libutp_extra_libs" != "x" ; then
-	   LIBUTP_LIBS="$LIBUTP_LIBS $libutp_extra_libs"
-	fi
+        LIBUTP_LIBS_QT="\$\${TRANSMISSION_TOP}/third-party/libutp/libutp.a"
+        if test "x$libutp_extra_libs" != "x" ; then
+            LIBUTP_LIBS="$LIBUTP_LIBS $libutp_extra_libs"
+            LIBUTP_LIBS_QT="$LIBUTP_LIBS_QT $libutp_extra_libs"
+        fi
         AC_DEFINE([WITH_UTP],[1])
         build_utp="yes"
     else 
@@ -229,8 +231,136 @@ if test "x$want_utp" = "xyes" ; then
 fi 
 AC_SUBST(LIBUTP_CFLAGS)
 AC_SUBST(LIBUTP_LIBS)
+AC_SUBST(LIBUTP_LIBS_QT)
 AM_CONDITIONAL([BUILD_UTP],[test "x$build_utp" = "xyes"])
 AC_MSG_RESULT([$build_utp])
+
+
+dnl
+dnl  look for preinstalled miniupnpc...
+dnl
+
+ac_save_LIBS="$LIBS"
+LIBS="-lminiupnpc"
+AC_MSG_CHECKING([system miniupnpc library])
+
+dnl See if ANY version of miniupnpc is installed
+AC_LINK_IFELSE(
+  [AC_LANG_PROGRAM([#include <miniupnpc/miniupnpc.h>],
+                   [struct UPNPDev dev;])],
+  [upnp_version="unknown"],
+  [upnp_version="none"]
+)
+
+dnl Let's hope it's 1.7 or higher, since it provides
+dnl MINIUPNPC_API_VERSION and we won't have to figure
+dnl it out on our own
+if test "x$upnp_version" = "xunknown" ; then
+  AC_RUN_IFELSE(
+    [AC_LANG_PROGRAM(
+      [#include <stdlib.h>
+       #include <miniupnpc/miniupnpc.h>],
+      [#ifdef MINIUPNPC_API_VERSION
+       return EXIT_SUCCESS;
+       #else
+       return EXIT_FAILURE;
+       #endif]
+    )],
+    [upnp_version=">= 1.7"]
+  )
+fi
+
+dnl Or maybe it's miniupnp 1.6
+if test "x$upnp_version" = "xunknown" ; then
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+    #include <stdlib.h>
+    #include <errno.h>
+    #include <miniupnpc/miniupnpc.h>
+    #include <miniupnpc/upnpcommands.h>
+  ]], [[
+    struct UPNPDev * devlist;
+    struct UPNPUrls urls;
+    struct IGDdatas data;
+    char lanaddr[16];
+    char portStr[8];
+    char intPort[8];
+    char intClient[16];
+    upnpDiscover( 2000, NULL, NULL, 0, 0, &errno );
+    UPNP_GetValidIGD( devlist, &urls, &data, lanaddr, sizeof( lanaddr ) ); 
+    UPNP_GetSpecificPortMappingEntry( urls.controlURL, data.first.servicetype,
+                        portStr, "TCP", intClient, intPort, NULL, NULL, NULL );
+  ]])],[
+  AC_DEFINE(MINIUPNPC_API_VERSION, 8, [miniupnpc 1.6 has API version 8])
+  upnp_version="1.6"])
+fi
+
+dnl Or maybe it's miniupnp 1.5
+if test "x$upnp_version" = "xunknown" ; then
+  AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+    #include <stdlib.h>
+    #include <miniupnpc/miniupnpc.h>
+    #include <miniupnpc/upnpcommands.h>
+  ]], [[
+    struct UPNPDev * devlist;
+    struct UPNPUrls urls;
+    struct IGDdatas data;
+    char lanaddr[16];
+    char portStr[8];
+    char intPort[8];
+    char intClient[16];
+    upnpDiscover( 2000, NULL, NULL, 0 );
+    UPNP_GetValidIGD( devlist, &urls, &data, lanaddr, sizeof( lanaddr ) ); 
+    UPNP_GetSpecificPortMappingEntry( urls.controlURL, data.first.servicetype,
+                        portStr, "TCP", intClient, intPort );
+  ]])],[
+  AC_DEFINE(MINIUPNPC_API_VERSION, 5, [miniupnpc 1.5 has API version 5])
+  upnp_version="1.5"])
+fi
+
+# ... and the results of our tests
+LIBS="$ac_save_LIBS"
+AC_MSG_RESULT([$upnp_version])
+AM_CONDITIONAL([BUILD_MINIUPNP],[test "x$upnp_version" = "xnone"])
+if test "x$upnp_version" = "xnone" ; then
+    LIBUPNP_CFLAGS="-I\$(top_srcdir)/third-party/"
+    LIBUPNP_LIBS="\$(top_builddir)/third-party/miniupnp/libminiupnp.a"
+    LIBUPNP_LIBS_QT="\$\${TRANSMISSION_TOP}/third-party/miniupnp/libminiupnp.a"
+else
+    AC_DEFINE([SYSTEM_MINIUPNP])
+    LIBUPNP_CFLAGS="" 
+    LIBUPNP_LIBS="-lminiupnpc"
+    LIBUPNP_LIBS_QT="-lminiupnpc"
+fi
+AC_SUBST(LIBUPNP_CFLAGS)
+AC_SUBST(LIBUPNP_LIBS)
+AC_SUBST(LIBUPNP_LIBS_QT)
+
+
+ 
+
+dnl ----------------------------------------------------------------------------
+dnl
+dnl  Allow usage of system natpmp library 
+
+LIBNATPMP_CFLAGS="-I\$(top_srcdir)/third-party/libnatpmp/" 
+LIBNATPMP_LIBS="\$(top_builddir)/third-party/libnatpmp/libnatpmp.a" 
+LIBNATPMP_LIBS_QT="\$\${TRANSMISSION_TOP}/third-party/libnatpmp/libnatpmp.a" 
+build_bundled_natpmp="yes" 
+AC_ARG_ENABLE([external-natpmp], 
+              AS_HELP_STRING([--enable-external-natpmp],[Use system external-natpmp]), 
+              [want_external_natpmp=${enableval}], 
+              [want_external_natpmp=no]) 
+if test "x$want_external_natpmp" != "xno" ; then 
+	dnl Would be lovely if it had pkgconfig 
+	LIBNATPMP_CFLAGS=""  
+	LIBNATPMP_LIBS="-lnatpmp" 
+	LIBNATPMP_LIBS_QT="-lnatpmp" 
+	build_bundled_natpmp="no" 
+fi 
+AM_CONDITIONAL([BUILD_NATPMP],[test "x$build_bundled_natpmp" = "xyes"]) 
+AC_SUBST(LIBNATPMP_CFLAGS) 
+AC_SUBST(LIBNATPMP_LIBS) 
+AC_SUBST(LIBNATPMP_LIBS_QT) 
 
 
 dnl ----------------------------------------------------------------------------
