@@ -90,7 +90,6 @@ noinst_HEADERS = \
     magnet.h \
     makemeta.h \
     metainfo.h \
-    natpmp_local.h \
     net.h \
     peer-common.h \
     peer-io.h \
