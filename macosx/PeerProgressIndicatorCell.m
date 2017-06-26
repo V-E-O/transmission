@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: PeerProgressIndicatorCell.m 11986 2011-02-19 19:30:24Z livings124 $
+ * $Id: PeerProgressIndicatorCell.m 13340 2012-06-10 02:35:58Z livings124 $
  * 
- * Copyright (c) 2007-2011 Transmission authors and contributors
+ * Copyright (c) 2007-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -23,11 +23,7 @@
  *****************************************************************************/
 
 #import "PeerProgressIndicatorCell.h"
-#import "NSApplicationAdditions.h"
 #import "NSStringAdditions.h"
-
-#import "transmission.h" // required by utils.h
-#import "utils.h"
 
 @implementation PeerProgressIndicatorCell
 
@@ -78,21 +74,14 @@
         [super drawWithFrame: cellFrame inView: controlView];
         if (fSeed)
         {
-            NSImage * checkImage = [NSImage imageNamed: @"CompleteCheck.png"];
+            NSImage * checkImage = [NSImage imageNamed: @"CompleteCheck"];
             
             const NSSize imageSize = [checkImage size];
             const NSRect rect = NSMakeRect(floor(NSMidX(cellFrame) - imageSize.width * 0.5),
                                             floor(NSMidY(cellFrame) - imageSize.height * 0.5),
                                             imageSize.width, imageSize.height);
             
-            if ([NSApp isOnSnowLeopardOrBetter])
-                [checkImage drawInRect: rect fromRect: NSZeroRect operation: NSCompositeSourceOver fraction: 1.0 respectFlipped: YES
-                        hints: nil];
-            else
-            {
-                [checkImage setFlipped: YES];
-                [checkImage drawInRect: rect fromRect: NSZeroRect operation: NSCompositeSourceOver fraction: 1.0];
-            }
+            [checkImage drawInRect: rect fromRect: NSZeroRect operation: NSCompositeSourceOver fraction: 1.0 respectFlipped: YES hints: nil];
         }
     }
 }

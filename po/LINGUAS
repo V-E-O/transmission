@@ -7,9 +7,11 @@ be
 be@latin
 bg
 bn
+bo
 br
 bs
 ca
+ca@valencia
 ceb
 ckb
 cs
@@ -35,6 +37,8 @@ he
 hi
 hr
 hu
+hy
+ia
 id
 is
 it
@@ -43,6 +47,7 @@ ka
 kk
 ko
 ku
+ky
 li
 lt
 lv
@@ -51,7 +56,9 @@ ml
 mr
 ms
 mt
+my
 nb
+nds
 nl
 nn
 oc
@@ -61,11 +68,13 @@ pt
 pt_BR
 ro
 ru
+si
 sk
 sl
 sq
 sr
 sv
+sw
 ta_LK
 te
 th
@@ -74,6 +83,7 @@ tr
 ur
 ug
 uk
+uz
 vi
 zh_CN
 zh_TW

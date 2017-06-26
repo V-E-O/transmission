@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: Controller.m 12925 2011-09-27 01:49:09Z livings124 $
+ * $Id: Controller.m 13622 2012-11-24 03:34:45Z livings124 $
  * 
- * Copyright (c) 2005-2011 Transmission authors and contributors
+ * Copyright (c) 2005-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -51,6 +51,7 @@
 #import "Badger.h"
 #import "DragOverlayWindow.h"
 #import "NSApplicationAdditions.h"
+#import "NSMutableArrayAdditions.h"
 #import "NSStringAdditions.h"
 #import "ExpandedPathToPathTransformer.h"
 #import "ExpandedPathToIconTransformer.h"
@@ -125,7 +126,7 @@ typedef enum
 
 #define UPDATE_UI_SECONDS   1.0
 
-#define TRANSFER_PLIST  @"/Library/Application Support/Transmission/Transfers.plist"
+#define TRANSFER_PLIST  @"Transfers.plist"
 
 #define WEBSITE_URL @"http://www.transmissionbt.com/"
 #define FORUM_URL   @"http://forum.transmissionbt.com/"
@@ -156,33 +157,18 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 
 @implementation Controller
 
+#warning remove ivars in header when 64-bit only (or it compiles in 32-bit mode)
+@synthesize prefsController = fPrefsController;
+@synthesize messageWindowController = fMessageController;
+
 + (void) initialize
 {
     //make sure another Transmission.app isn't running already
-    BOOL othersRunning = NO;
-    
-    if ([NSApp isOnSnowLeopardOrBetter])
-    {
-        NSArray * apps = [NSRunningApplicationSL runningApplicationsWithBundleIdentifier: [[NSBundle mainBundle] bundleIdentifier]];
-        othersRunning = [apps count] > 1;
-    }
-    else
-    {
-        NSString * bundleIdentifier = [[NSBundle mainBundle] bundleIdentifier];
-        const int processIdentifier = [[NSProcessInfo processInfo] processIdentifier];
-
-        for (NSDictionary * dic in [[NSWorkspace sharedWorkspace] launchedApplications])
-        {
-            if ([[dic objectForKey: @"NSApplicationBundleIdentifier"] isEqualToString: bundleIdentifier]
-                    && [[dic objectForKey: @"NSApplicationProcessIdentifier"] intValue] != processIdentifier)
-                othersRunning = YES;
-        }
-    }
-    
-    if (othersRunning)
+    NSArray * apps = [NSRunningApplication runningApplicationsWithBundleIdentifier: [[NSBundle mainBundle] bundleIdentifier]];
+    if ([apps count] > 1)
     {
         NSAlert * alert = [[NSAlert alloc] init];
-        [alert addButtonWithTitle: NSLocalizedString(@"Quit", "Transmission already running alert -> button")];
+        [alert addButtonWithTitle: NSLocalizedString(@"OK", "Transmission already running alert -> button")];
         [alert setMessageText: NSLocalizedString(@"Transmission is already running.",
                                                 "Transmission already running alert -> title")];
         [alert setInformativeText: NSLocalizedString(@"There is already a copy of Transmission running. "
@@ -323,26 +309,56 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         tr_bencDictAddStr(&settings, TR_PREFS_KEY_SCRIPT_TORRENT_DONE_FILENAME, [[fDefaults stringForKey: @"DoneScriptPath"] UTF8String]);
         tr_bencDictAddBool(&settings, TR_PREFS_KEY_UTP_ENABLED, [fDefaults boolForKey: @"UTPGlobal"]);
         
-        tr_formatter_size_init([NSApp isOnSnowLeopardOrBetter] ? 1000 : 1024,
-                                    [NSLocalizedString(@"KB", "File size - kilobytes") UTF8String],
-                                    [NSLocalizedString(@"MB", "File size - megabytes") UTF8String],
-                                    [NSLocalizedString(@"GB", "File size - gigabytes") UTF8String],
-                                    [NSLocalizedString(@"TB", "File size - terabytes") UTF8String]);
+        
+        NSString * kbString, * mbString, * gbString, * tbString;
+        if ([NSApp isOnMountainLionOrBetter])
+        {
+            NSByteCountFormatter * unitFormatter = [[NSByteCountFormatterMtLion alloc] init];
+            [unitFormatter setIncludesCount: NO];
+            [unitFormatter setAllowsNonnumericFormatting: NO];
+            
+            [unitFormatter setAllowedUnits: NSByteCountFormatterUseKB];
+            kbString = [unitFormatter stringFromByteCount: 17]; //use a random value to avoid possible pluralization issues with 1 or 0 (an example is if we use 1 for bytes, we'd get "byte" when we'd want "bytes" for the generic libtransmission value at least)
+            
+            [unitFormatter setAllowedUnits: NSByteCountFormatterUseMB];
+            mbString = [unitFormatter stringFromByteCount: 17];
+            
+            [unitFormatter setAllowedUnits: NSByteCountFormatterUseGB];
+            gbString = [unitFormatter stringFromByteCount: 17];
+            
+            [unitFormatter setAllowedUnits: NSByteCountFormatterUseTB];
+            tbString = [unitFormatter stringFromByteCount: 17];
+            
+            [unitFormatter release];
+        }
+        else
+        {
+            kbString = NSLocalizedString(@"KB", "file/memory size - kilobytes");
+            mbString = NSLocalizedString(@"MB", "file/memory size - megabytes");
+            gbString = NSLocalizedString(@"GB", "file/memory size - gigabytes");
+            tbString = NSLocalizedString(@"TB", "file/memory size - terabytes");
+        }
+        
+        tr_formatter_size_init(1000, [kbString UTF8String],
+                                        [mbString UTF8String],
+                                        [gbString UTF8String],
+                                        [tbString UTF8String]);
 
-        tr_formatter_speed_init([NSApp isOnSnowLeopardOrBetter] ? 1000 : 1024,
-                                    [NSLocalizedString(@"KB/s", "Transfer speed (kilobytes per second)") UTF8String],
-                                    [NSLocalizedString(@"MB/s", "Transfer speed (megabytes per second)") UTF8String],
-                                    [NSLocalizedString(@"GB/s", "Transfer speed (gigabytes per second)") UTF8String],
-                                    [NSLocalizedString(@"TB/s", "Transfer speed (terabytes per second)") UTF8String]); //why not?
+        tr_formatter_speed_init(1000, [NSLocalizedString(@"KB/s", "Transfer speed (kilobytes per second)") UTF8String],
+                                        [NSLocalizedString(@"MB/s", "Transfer speed (megabytes per second)") UTF8String],
+                                        [NSLocalizedString(@"GB/s", "Transfer speed (gigabytes per second)") UTF8String],
+                                        [NSLocalizedString(@"TB/s", "Transfer speed (terabytes per second)") UTF8String]); //why not?
 
-        tr_formatter_mem_init(1024, [NSLocalizedString(@"KB", "Memory size - kilobytes") UTF8String],
-                                    [NSLocalizedString(@"MB", "Memory size - megabytes") UTF8String],
-                                    [NSLocalizedString(@"GB", "Memory size - gigabytes") UTF8String],
-                                    [NSLocalizedString(@"TB", "Memory size - terabytes") UTF8String]);
+        tr_formatter_mem_init(1000, [kbString UTF8String],
+                                    [mbString UTF8String],
+                                    [gbString UTF8String],
+                                    [tbString UTF8String]);
         
         const char * configDir = tr_getDefaultConfigDir("Transmission");
         fLib = tr_sessionInit("macosx", configDir, YES, &settings);
         tr_bencFree(&settings);
+        
+        fConfigDirectory = [[NSString alloc] initWithUTF8String: configDir];
         
         [NSApp setDelegate: self];
         
@@ -355,8 +371,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         
         fInfoController = [[InfoWindowController alloc] init];
         
-        [PrefsController setHandle: fLib];
-        fPrefsController = [[PrefsController alloc] init];
+        fPrefsController = [[PrefsController alloc] initWithHandle: fLib];
         
         fQuitting = NO;
         fGlobalPopoverShown = NO;
@@ -422,6 +437,32 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     [fTableView registerForDraggedTypes: [NSArray arrayWithObject: TORRENT_TABLE_VIEW_DATA_TYPE]];
     [fWindow registerForDraggedTypes: [NSArray arrayWithObjects: NSFilenamesPboardType, NSURLPboardType, nil]];
     
+    //sort the sort menu items (localization is from strings file)
+    NSMutableArray * sortMenuItems = [NSMutableArray arrayWithCapacity: 7];
+    NSUInteger sortMenuIndex = 0;
+    BOOL foundSortItem = NO;
+    for (NSMenuItem * item in [fSortMenu itemArray])
+    {
+        //assume all sort items are together and the Queue Order item is first
+        if ([item action] == @selector(setSort:) && [item tag] != SORT_ORDER_TAG)
+        {
+            [sortMenuItems addObject: item];
+            [fSortMenu removeItemAtIndex: sortMenuIndex];
+            foundSortItem = YES;
+        }
+        else
+        {
+            if (foundSortItem)
+                break;
+            ++sortMenuIndex;
+        }
+    }
+    
+    [sortMenuItems sortUsingDescriptors: [NSArray arrayWithObject: [NSSortDescriptor sortDescriptorWithKey: @"title" ascending: YES selector: @selector(localizedCompare:)]]];
+    
+    for (NSMenuItem * item in sortMenuItems)
+        [fSortMenu insertItem: item atIndex: sortMenuIndex++];
+    
     //you would think this would be called later in this method from updateUI, but it's not reached in awakeFromNib
     //this must be called after showStatusBar:
     [fStatusBar updateWithDownload: 0.0 upload: 0.0];
@@ -438,8 +479,8 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         NSLog(@"Could not IORegisterForSystemPower");
     
     //load previous transfers
-    NSArray * history = [NSArray arrayWithContentsOfFile: [NSHomeDirectory() stringByAppendingPathComponent: TRANSFER_PLIST]];
-    
+    NSString * historyFile = [fConfigDirectory stringByAppendingPathComponent: TRANSFER_PLIST];
+    NSArray * history = [NSArray arrayWithContentsOfFile: historyFile];
     if (!history)
     {
         //old version saved transfer info in prefs file
@@ -473,6 +514,9 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     
     fBadger = [[Badger alloc] initWithLib: fLib];
     
+    if ([NSApp isOnMountainLionOrBetter])
+        [[NSUserNotificationCenterMtLion defaultUserNotificationCenter] setDelegate: self];
+    
     //observe notifications
     NSNotificationCenter * nc = [NSNotificationCenter defaultCenter];
     
@@ -487,6 +531,9 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     
     [nc addObserver: self selector: @selector(torrentFinishedSeeding:)
                     name: @"TorrentFinishedSeeding" object: nil];
+    
+    [nc addObserver: self selector: @selector(applyFilter)
+                    name: kTorrentDidChangeGroupNotification object: nil];
     
     //avoids need of setting delegate
     [nc addObserver: self selector: @selector(torrentTableViewSelectionDidChange:)
@@ -517,11 +564,14 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     //open newly created torrent file
     [nc addObserver: self selector: @selector(openCreatedFile:)
                     name: @"OpenCreatedTorrentFile" object: nil];
+    
+    [nc addObserver: self selector: @selector(applyFilter)
+                    name: @"UpdateGroups" object: nil];
 
     //timer to update the interface every second
     [self updateUI];
-    fTimer = [NSTimer scheduledTimerWithTimeInterval: UPDATE_UI_SECONDS target: self
-                selector: @selector(updateUI) userInfo: nil repeats: YES];
+    fTimer = [[NSTimer scheduledTimerWithTimeInterval: UPDATE_UI_SECONDS target: self
+                selector: @selector(updateUI) userInfo: nil repeats: YES] retain];
     [[NSRunLoop currentRunLoop] addTimer: fTimer forMode: NSModalPanelRunLoopMode];
     [[NSRunLoop currentRunLoop] addTimer: fTimer forMode: NSEventTrackingRunLoopMode];
     
@@ -540,6 +590,14 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     //register for dock icon drags (has to be in applicationDidFinishLaunching: to work)
     [[NSAppleEventManager sharedAppleEventManager] setEventHandler: self andSelector: @selector(handleOpenContentsEvent:replyEvent:)
         forEventClass: kCoreEventClass andEventID: kAEOpenContents];
+    
+    //if we were opened from a user notification, do the corresponding action
+    if ([NSApp isOnMountainLionOrBetter])
+    {
+        NSUserNotification * launchNotification = [[notification userInfo] objectForKey: NSApplicationLaunchUserNotificationKey];
+        if (launchNotification)
+            [self userNotificationCenter: nil didActivateNotification: launchNotification];
+    }
     
     //auto importing
     [self checkAutoImportDirectory];
@@ -628,7 +686,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
             NSBeginAlertSheet(NSLocalizedString(@"Are you sure you want to quit?", "Confirm Quit panel -> title"),
                                 NSLocalizedString(@"Quit", "Confirm Quit panel -> button"),
                                 NSLocalizedString(@"Cancel", "Confirm Quit panel -> button"), nil, fWindow, self,
-                                @selector(quitSheetDidEnd:returnCode:contextInfo:), nil, nil, message);
+                                @selector(quitSheetDidEnd:returnCode:contextInfo:), nil, nil, @"%@", message);
             return NSTerminateLater;
         }
     }
@@ -646,7 +704,8 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     fQuitting = YES;
     
     //stop the Bonjour service
-    [[BonjourController defaultController] stop];
+    if ([BonjourController defaultControllerExists])
+        [[BonjourController defaultController] stop];
 
     //stop blocklist download
     if ([BlocklistDownloader isRunning])
@@ -656,6 +715,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     [[NSNotificationCenter defaultCenter] removeObserver: self];
     
     [fTimer invalidate];
+    [fTimer release];
     
     if (fAutoImportTimer)
     {   
@@ -681,10 +741,8 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     //remember window states and close all windows
     [fDefaults setBool: [[fInfoController window] isVisible] forKey: @"InfoVisible"];
     
-    const BOOL quickLookOpen = [NSApp isOnSnowLeopardOrBetter] && [QLPreviewPanelSL sharedPreviewPanelExists]
-                                && [[QLPreviewPanelSL sharedPreviewPanel] isVisible];
-    if (quickLookOpen)
-        [[QLPreviewPanelSL sharedPreviewPanel] updateController];
+    if ([QLPreviewPanel sharedPreviewPanelExists] && [[QLPreviewPanel sharedPreviewPanel] isVisible])
+        [[QLPreviewPanel sharedPreviewPanel] updateController];
     
     for (NSWindow * window in [NSApp windows])
         [window close];
@@ -707,6 +765,9 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     [fTorrents release];
     [fDisplayedTorrents release];
     
+    [fAddWindows release];
+    [fAddingTransfers release];
+    
     [fOverlayWindow release];
     [fBadger release];
     
@@ -714,8 +775,15 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     
     [fPreviewPanel release];
     
+    [fConfigDirectory release];
+    
     //complete cleanup
     tr_sessionClose(fLib);
+}
+
+- (tr_session *) sessionHandle
+{
+    return fLib;
 }
 
 - (void) handleOpenContentsEvent: (NSAppleEventDescriptor *) event replyEvent: (NSAppleEventDescriptor *) replyEvent
@@ -742,6 +810,13 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     {
         [download cancel];
         
+        [fPendingTorrentDownloads removeObjectForKey: [[download request] URL]];
+        if ([fPendingTorrentDownloads count] == 0)
+        {
+            [fPendingTorrentDownloads release];
+            fPendingTorrentDownloads = nil;
+        }
+        
         NSRunAlertPanel(NSLocalizedString(@"Torrent download failed", "Download not a torrent -> title"),
             [NSString stringWithFormat: NSLocalizedString(@"It appears that the file \"%@\" from %@ is not a torrent file.",
             "Download not a torrent -> message"), suggestedName,
@@ -757,11 +832,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 
 -(void) download: (NSURLDownload *) download didCreateDestination: (NSString *) path
 {
-    if (!fPendingTorrentDownloads)
-        fPendingTorrentDownloads = [[NSMutableDictionary alloc] init];
-    
-    [fPendingTorrentDownloads setObject: [NSDictionary dictionaryWithObjectsAndKeys:
-                    path, @"Path", download, @"Download", nil] forKey: [[download request] URL]];
+    [(NSMutableDictionary *)[fPendingTorrentDownloads objectForKey: [[download request] URL]] setObject: path forKey: @"Path"];
 }
 
 - (void) download: (NSURLDownload *) download didFailWithError: (NSError *) error
@@ -878,7 +949,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         if (!lockDestination && [[GroupsController groups] usesCustomDownloadLocationForIndex: [torrent groupValue]])
         {
             location = [[GroupsController groups] customDownloadLocationForIndex: [torrent groupValue]];
-            [torrent changeDownloadFolderBeforeUsing: location];
+            [torrent changeDownloadFolderBeforeUsing: location determinationType: TorrentDeterminationAutomatic];
         }
         
         //verify the data right away if it was newly created
@@ -890,8 +961,13 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         {
             AddWindowController * addController = [[AddWindowController alloc] initWithTorrent: torrent destination: location
                                                     lockDestination: lockDestination controller: self torrentFile: torrentPath
-                                                    deleteTorrent: deleteTorrentFile canToggleDelete: canToggleDelete];
+                                                    deleteTorrentCheckEnableInitially: deleteTorrentFile canToggleDelete: canToggleDelete];
             [addController showWindow: self];
+            
+            if (!fAddWindows)
+                fAddWindows = [[NSMutableSet alloc] init];
+            [fAddWindows addObject: addController];
+            [addController release];
         }
         else
         {
@@ -901,6 +977,10 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
             [torrent update];
             [fTorrents addObject: torrent];
             [torrent release];
+            
+            if (!fAddingTransfers)
+                fAddingTransfers = [[NSMutableSet alloc] init];
+            [fAddingTransfers addObject: torrent];
         }
     }
 
@@ -910,7 +990,6 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 - (void) askOpenConfirmed: (AddWindowController *) addController add: (BOOL) add
 {
     Torrent * torrent = [addController torrent];
-    [addController release];
     
     if (add)
     {
@@ -920,12 +999,23 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [fTorrents addObject: torrent];
         [torrent release];
         
+        if (!fAddingTransfers)
+            fAddingTransfers = [[NSMutableSet alloc] init];
+        [fAddingTransfers addObject: torrent];
+        
         [self fullUpdateUI];
     }
     else
     {
         [torrent closeRemoveTorrent: NO];
         [torrent release];
+    }
+    
+    [fAddWindows removeObject: addController];
+    if ([fAddWindows count] == 0)
+    {
+        [fAddWindows release];
+        fAddWindows = nil;
     }
 }
 
@@ -956,7 +1046,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     if ([[GroupsController groups] usesCustomDownloadLocationForIndex: [torrent groupValue]])
     {
         location = [[GroupsController groups] customDownloadLocationForIndex: [torrent groupValue]];
-        [torrent changeDownloadFolderBeforeUsing: location];
+        [torrent changeDownloadFolderBeforeUsing: location determinationType: TorrentDeterminationAutomatic];
     }
     
     if ([fDefaults boolForKey: @"MagnetOpenAsk"] || !location)
@@ -964,6 +1054,11 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         AddMagnetWindowController * addController = [[AddMagnetWindowController alloc] initWithTorrent: torrent destination: location
                                                         controller: self];
         [addController showWindow: self];
+        
+        if (!fAddWindows)
+            fAddWindows = [[NSMutableSet alloc] init];
+        [fAddWindows addObject: addController];
+        [addController release];
     }
     else
     {
@@ -973,6 +1068,10 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [torrent update];
         [fTorrents addObject: torrent];
         [torrent release];
+        
+        if (!fAddingTransfers)
+            fAddingTransfers = [[NSMutableSet alloc] init];
+        [fAddingTransfers addObject: torrent];
     }
 
     [self fullUpdateUI];
@@ -981,7 +1080,6 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 - (void) askOpenMagnetConfirmed: (AddMagnetWindowController *) addController add: (BOOL) add
 {
     Torrent * torrent = [addController torrent];
-    [addController release];
     
     if (add)
     {
@@ -991,6 +1089,10 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [fTorrents addObject: torrent];
         [torrent release];
         
+        if (!fAddingTransfers)
+            fAddingTransfers = [[NSMutableSet alloc] init];
+        [fAddingTransfers addObject: torrent];
+        
         [self fullUpdateUI];
     }
     else
@@ -998,13 +1100,19 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [torrent closeRemoveTorrent: NO];
         [torrent release];
     }
+    
+    [fAddWindows removeObject: addController];
+    if ([fAddWindows count] == 0)
+    {
+        [fAddWindows release];
+        fAddWindows = nil;
+    }
 }
 
 - (void) openCreatedFile: (NSNotification *) notification
 {
     NSDictionary * dict = [notification userInfo];
-    [self openFiles: [NSArray arrayWithObject: [dict objectForKey: @"File"]] addType: ADD_CREATED
-                        forcePath: [dict objectForKey: @"Path"]];
+    [self openFiles: [NSArray arrayWithObject: [dict objectForKey: @"File"]] addType: ADD_CREATED forcePath: [dict objectForKey: @"Path"]];
     [dict release];
 }
 
@@ -1026,24 +1134,25 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 - (void) openShowSheet: (id) sender
 {
     NSOpenPanel * panel = [NSOpenPanel openPanel];
-
+    
     [panel setAllowsMultipleSelection: YES];
     [panel setCanChooseFiles: YES];
     [panel setCanChooseDirectories: NO];
-
-    [panel beginSheetForDirectory: nil file: nil types: [NSArray arrayWithObjects: @"org.bittorrent.torrent", @"torrent", nil]
-        modalForWindow: fWindow modalDelegate: self didEndSelector: @selector(openSheetClosed:returnCode:contextInfo:)
-        contextInfo: [NSNumber numberWithBool: sender == fOpenIgnoreDownloadFolder]];
-}
-
-- (void) openSheetClosed: (NSOpenPanel *) panel returnCode: (NSInteger) code contextInfo: (NSNumber *) useOptions
-{
-    if (code == NSOKButton)
-    {
-        NSDictionary * dictionary = [[NSDictionary alloc] initWithObjectsAndKeys: [panel filenames], @"Filenames",
-            [NSNumber numberWithInt: [useOptions boolValue] ? ADD_SHOW_OPTIONS : ADD_MANUAL], @"AddType", nil];
-        [self performSelectorOnMainThread: @selector(openFilesWithDict:) withObject: dictionary waitUntilDone: NO];
-    }
+    
+    [panel setAllowedFileTypes: [NSArray arrayWithObjects: @"org.bittorrent.torrent", @"torrent", nil]];
+    
+    [panel beginSheetModalForWindow: fWindow completionHandler: ^(NSInteger result) {
+        if (result == NSFileHandlingPanelOKButton)
+        {
+            NSMutableArray * filenames = [NSMutableArray arrayWithCapacity: [[panel URLs] count]];
+            for (NSURL * url in [panel URLs])
+                [filenames addObject: [url path]];
+            
+            NSDictionary * dictionary = [[NSDictionary alloc] initWithObjectsAndKeys: filenames, @"Filenames",
+                                         [NSNumber numberWithInt: sender == fOpenIgnoreDownloadFolder ? ADD_SHOW_OPTIONS : ADD_MANUAL], @"AddType", nil];
+            [self performSelectorOnMainThread: @selector(openFilesWithDict:) withObject: dictionary waitUntilDone: NO];
+        }
+    }];
 }
 
 - (void) invalidOpenAlert: (NSString *) filename
@@ -1154,21 +1263,41 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         
         NSURLRequest * request = [NSURLRequest requestWithURL: [NSURL URLWithString: urlString]
                                     cachePolicy: NSURLRequestReloadIgnoringLocalAndRemoteCacheData timeoutInterval: 60];
-        [[NSURLDownload alloc] initWithRequest: request delegate: self];
+        
+        if ([fPendingTorrentDownloads objectForKey: [request URL]])
+        {
+            NSLog(@"Already downloading %@", [request URL]);
+            return;
+        }
+        
+        NSURLDownload * download = [[NSURLDownload alloc] initWithRequest: request delegate: self];
+        
+        if (!fPendingTorrentDownloads)
+            fPendingTorrentDownloads = [[NSMutableDictionary alloc] init];
+        [fPendingTorrentDownloads setObject: [NSMutableDictionary dictionaryWithObject: download forKey: @"Download"] forKey: [request URL]];
     }
 }
 
 - (void) openURLShowSheet: (id) sender
 {
-    [[[URLSheetWindowController alloc] initWithController: self] beginSheetForWindow: fWindow];
+    if (!fUrlSheetController)
+    {
+        fUrlSheetController = [[URLSheetWindowController alloc] initWithController: self];
+    
+        [NSApp beginSheet: [fUrlSheetController window] modalForWindow: fWindow modalDelegate: self didEndSelector: @selector(urlSheetDidEnd:returnCode:contextInfo:) contextInfo: nil];
+    }
 }
 
-- (void) urlSheetDidEnd: (URLSheetWindowController *) controller url: (NSString *) urlString returnCode: (NSInteger) returnCode
+- (void) urlSheetDidEnd: (NSWindow *) sheet returnCode: (NSInteger) returnCode contextInfo: (void *) contextInfo
 {
     if (returnCode == 1)
+    {
+        NSString * urlString = [fUrlSheetController urlString];
         [self performSelectorOnMainThread: @selector(openURL:) withObject: urlString waitUntilDone: NO];
+    }
     
-    [controller release];
+    [fUrlSheetController release];
+    fUrlSheetController = nil;
 }
 
 - (void) createFile: (id) sender
@@ -1250,8 +1379,6 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 
 - (void) removeTorrents: (NSArray *) torrents deleteData: (BOOL) deleteData
 {
-    [torrents retain];
-
     if ([fDefaults boolForKey: @"CheckRemove"])
     {
         NSUInteger active = 0, downloading = 0;
@@ -1265,16 +1392,15 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 
         if ([fDefaults boolForKey: @"CheckRemoveDownloading"] ? downloading > 0 : active > 0)
         {
-            NSDictionary * dict = [[NSDictionary alloc] initWithObjectsAndKeys:
-                                    torrents, @"Torrents",
-                                    [NSNumber numberWithBool: deleteData], @"DeleteData", nil];
+            NSDictionary * dict = @{ @"Torrents" : torrents,
+                                    @"DeleteData" : @(deleteData) };
             
             NSString * title, * message;
             
             const NSInteger selected = [torrents count];
             if (selected == 1)
             {
-                NSString * torrentName = [[torrents objectAtIndex: 0] name];
+                NSString * torrentName = [(Torrent *)[torrents objectAtIndex: 0] name];
                 
                 if (deleteData)
                     title = [NSString stringWithFormat:
@@ -1313,7 +1439,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
             
             NSBeginAlertSheet(title, NSLocalizedString(@"Remove", "Removal confirm panel -> button"),
                 NSLocalizedString(@"Cancel", "Removal confirm panel -> button"), nil, fWindow, self,
-                nil, @selector(removeSheetDidEnd:returnCode:contextInfo:), dict, message);
+                nil, @selector(removeSheetDidEnd:returnCode:contextInfo:), [dict retain], @"%@", message);
             return;
         }
     }
@@ -1326,51 +1452,109 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     NSArray * torrents = [dict objectForKey: @"Torrents"];
     if (returnCode == NSAlertDefaultReturn)
         [self confirmRemoveTorrents: torrents deleteData: [[dict objectForKey: @"DeleteData"] boolValue]];
-    else
-        [torrents release];
-    
     [dict release];
 }
 
 - (void) confirmRemoveTorrents: (NSArray *) torrents deleteData: (BOOL) deleteData
 {
-    NSMutableArray * selectedValues = [NSMutableArray arrayWithArray: [fTableView selectedValues]];
-    [selectedValues removeObjectsInArray: torrents];
-    
-    //don't want any of these starting then stopping
-    for (Torrent * torrent in torrents)
-        if ([torrent waitingToStart])
-            [torrent stopTransfer];
-    
-    [fTorrents removeObjectsInArray: torrents];
-    
-    //if not removed from displayed torrents, fullUpdateUI might cause a crash
-    if ([fDisplayedTorrents count] > 0)
+    NSMutableArray * selectedValues = nil;
+    if (![NSApp isOnLionOrBetter])
     {
-        if ([[fDisplayedTorrents objectAtIndex: 0] isKindOfClass: [TorrentGroup class]])
-        {
-            for (TorrentGroup * group in fDisplayedTorrents)
-                [[group torrents] removeObjectsInArray: torrents];
-        }
-        else
-            [fDisplayedTorrents removeObjectsInArray: torrents];
+        selectedValues = [NSMutableArray arrayWithArray: [fTableView selectedValues]];
+        [selectedValues removeObjectsInArray: torrents];
     }
     
+    //miscellaneous
     for (Torrent * torrent in torrents)
     {
+        //don't want any of these starting then stopping
+        if ([torrent waitingToStart])
+            [torrent stopTransfer];
+        
         //let's expand all groups that have removed items - they either don't exist anymore, are already expanded, or are collapsed (rpc)
         [fTableView removeCollapsedGroup: [torrent groupValue]];
         
         //we can't assume the window is active - RPC removal, for example
         [fBadger removeTorrent: torrent];
-        
-        [torrent closeRemoveTorrent: deleteData];
     }
     
-    #warning why do we need them retained?
-    [torrents release];
+    //#5106 - don't try to remove torrents that have already been removed (fix for a bug, but better safe than crash anyway)
+    NSIndexSet * indexesToRemove = [torrents indexesOfObjectsWithOptions: NSEnumerationConcurrent passingTest: ^BOOL(Torrent * torrent, NSUInteger idx, BOOL * stop) {
+        return [fTorrents indexOfObjectIdenticalTo: torrent] != NSNotFound;
+    }];
+    if ([torrents count] != [indexesToRemove count])
+    {
+        NSLog(@"trying to remove %ld transfers, but %ld have already been removed", [torrents count], [torrents count] - [indexesToRemove count]);
+        torrents = [torrents objectsAtIndexes: indexesToRemove];
+        
+        if ([indexesToRemove count] == 0)
+        {
+            [self fullUpdateUI];
+            return;
+        }
+    }
     
-    [fTableView selectValues: selectedValues];
+    [fTorrents removeObjectsInArray: torrents];
+    
+    //set up helpers to remove from the table
+    __block BOOL beganUpdate = NO;
+    
+    void (^doTableRemoval)(NSMutableArray *, id) = ^(NSMutableArray * displayedTorrents, id parent) {
+        NSIndexSet * indexes = [displayedTorrents indexesOfObjectsWithOptions: NSEnumerationConcurrent passingTest: ^(id obj, NSUInteger idx, BOOL * stop) {
+            return [torrents containsObject: obj];
+        }];
+        
+        if ([indexes count] > 0)
+        {
+            if ([NSApp isOnLionOrBetter])
+            {
+                if (!beganUpdate)
+                {
+                    [NSAnimationContext beginGrouping]; //this has to be before we set the completion handler (#4874)
+                    
+                    //we can't closeRemoveTorrent: until it's no longer in the GUI at all
+                    [[NSAnimationContext currentContext] setCompletionHandler: ^{
+                        for (Torrent * torrent in torrents)
+                            [torrent closeRemoveTorrent: deleteData];
+                    }];
+                    
+                    [fTableView beginUpdates];
+                    beganUpdate = YES;
+                }
+                
+                [fTableView removeItemsAtIndexes: indexes inParent: parent withAnimation: NSTableViewAnimationSlideLeft];
+            }
+            [displayedTorrents removeObjectsAtIndexes: indexes];
+        }
+    };
+    
+    //if not removed from the displayed torrents here, fullUpdateUI might cause a crash
+    if ([fDisplayedTorrents count] > 0)
+    {
+        if ([[fDisplayedTorrents objectAtIndex: 0] isKindOfClass: [TorrentGroup class]])
+        {
+            for (TorrentGroup * group in fDisplayedTorrents)
+                doTableRemoval([group torrents], group);
+        }
+        else
+            doTableRemoval(fDisplayedTorrents, nil);
+        
+        if (beganUpdate)
+        {
+            [fTableView endUpdates];
+            [NSAnimationContext endGrouping];
+        }
+    }
+    
+    if (!beganUpdate)
+    {
+        //do here if we're not doing it at the end of the animation
+        for (Torrent * torrent in torrents)
+            [torrent closeRemoveTorrent: deleteData];
+    }
+    
+    if (selectedValues)
+        [fTableView selectValues: selectedValues];
     
     [self fullUpdateUI];
 }
@@ -1387,7 +1571,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 
 - (void) clearCompleted: (id) sender
 {
-    NSMutableArray * torrents = [[NSMutableArray alloc] init];
+    NSMutableArray * torrents = [NSMutableArray array];
     
     for (Torrent * torrent in fTorrents)
         if ([torrent isFinishedSeeding])
@@ -1398,7 +1582,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         NSString * message, * info;
         if ([torrents count] == 1)
         {
-            NSString * torrentName = [[torrents objectAtIndex: 0] name];
+            NSString * torrentName = [(Torrent *)[torrents objectAtIndex: 0] name];
             message = [NSString stringWithFormat: NSLocalizedString(@"Are you sure you want to remove \"%@\" from the transfer list?",
                                                                   "Remove completed confirm panel -> title"), torrentName];
             
@@ -1427,10 +1611,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
             [fDefaults setBool: NO forKey: @"WarningRemoveCompleted"];
         
         if (returnCode != NSAlertFirstButtonReturn)
-        {
-            [torrents release];
             return;
-        }
     }
     
     [self confirmRemoveTorrents: torrents deleteData: NO];
@@ -1450,28 +1631,21 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     [panel setCanChooseDirectories: YES];
     [panel setCanCreateDirectories: YES];
     
-    torrents = [torrents retain];
     NSInteger count = [torrents count];
     if (count == 1)
         [panel setMessage: [NSString stringWithFormat: NSLocalizedString(@"Select the new folder for \"%@\".",
-                            "Move torrent -> select destination folder"), [[torrents objectAtIndex: 0] name]]];
+                            "Move torrent -> select destination folder"), [(Torrent *)[torrents objectAtIndex: 0] name]]];
     else
         [panel setMessage: [NSString stringWithFormat: NSLocalizedString(@"Select the new folder for %d data files.",
                             "Move torrent -> select destination folder"), count]];
-        
-    [panel beginSheetForDirectory: nil file: nil modalForWindow: fWindow modalDelegate: self
-        didEndSelector: @selector(moveDataFileChoiceClosed:returnCode:contextInfo:) contextInfo: torrents];
-}
-
-- (void) moveDataFileChoiceClosed: (NSOpenPanel *) panel returnCode: (NSInteger) code contextInfo: (NSArray *) torrents
-{
-    if (code == NSOKButton)
-    {
-        for (Torrent * torrent in torrents)
-            [torrent moveTorrentDataFileTo: [[panel filenames] objectAtIndex: 0]];
-    }
     
-    [torrents release];
+    [panel beginSheetModalForWindow: fWindow completionHandler: ^(NSInteger result) {
+        if (result == NSFileHandlingPanelOKButton)
+        {
+            for (Torrent * torrent in torrents)
+                [torrent moveTorrentDataFileTo: [[[panel URLs] objectAtIndex: 0] path]];
+        }
+    }];
 }
 
 - (void) copyTorrentFiles: (id) sender
@@ -1495,8 +1669,16 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [panel setAllowedFileTypes: [NSArray arrayWithObjects: @"org.bittorrent.torrent", @"torrent", nil]];
         [panel setExtensionHidden: NO];
         
-        [panel beginSheetForDirectory: nil file: [torrent name] modalForWindow: fWindow modalDelegate: self
-            didEndSelector: @selector(saveTorrentCopySheetClosed:returnCode:contextInfo:) contextInfo: torrents];
+        [panel setNameFieldStringValue: [torrent name]];
+        
+        [panel beginSheetModalForWindow: fWindow completionHandler: ^(NSInteger result) {
+            //copy torrent to new location with name of data file
+            if (result == NSFileHandlingPanelOKButton)
+                [torrent copyTorrentFileTo: [[panel URL] path]];
+            
+            [torrents removeObjectAtIndex: 0];
+            [self performSelectorOnMainThread: @selector(copyTorrentFileForTorrents:) withObject: torrents waitUntilDone: NO];
+        }];
     }
     else
     {
@@ -1520,16 +1702,6 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     }
 }
 
-- (void) saveTorrentCopySheetClosed: (NSSavePanel *) panel returnCode: (NSInteger) code contextInfo: (NSMutableArray *) torrents
-{
-    //copy torrent to new location with name of data file
-    if (code == NSOKButton)
-        [[torrents objectAtIndex: 0] copyTorrentFileTo: [panel filename]];
-    
-    [torrents removeObjectAtIndex: 0];
-    [self performSelectorOnMainThread: @selector(copyTorrentFileForTorrents:) withObject: torrents waitUntilDone: NO];
-}
-
 - (void) copyMagnetLinks: (id) sender
 {
     NSArray * torrents = [fTableView selectedTorrents];
@@ -1544,43 +1716,23 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     NSString * text = [links componentsJoinedByString: @"\n"];
     
     NSPasteboard * pb = [NSPasteboard generalPasteboard];
-    if ([NSApp isOnSnowLeopardOrBetter])
-    {
-        [pb clearContents];
-        [pb writeObjects: [NSArray arrayWithObject: text]];
-    }
-    else
-    {
-        [pb declareTypes: [NSArray arrayWithObject: NSStringPboardType] owner: nil];
-        [pb setString: text forType: NSStringPboardType];
-    }
+    [pb clearContents];
+    [pb writeObjects: [NSArray arrayWithObject: text]];
 }
 
 - (void) revealFile: (id) sender
 {
     NSArray * selected = [fTableView selectedTorrents];
-    if ([NSApp isOnSnowLeopardOrBetter])
+    NSMutableArray * paths = [NSMutableArray arrayWithCapacity: [selected count]];
+    for (Torrent * torrent in selected)
     {
-        NSMutableArray * paths = [NSMutableArray arrayWithCapacity: [selected count]];
-        for (Torrent * torrent in selected)
-        {
-            NSString * location = [torrent dataLocation];
-            if (location)
-                [paths addObject: [NSURL fileURLWithPath: location]];
-        }
-        
-        if ([paths count] > 0)
-            [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs: paths];
+        NSString * location = [torrent dataLocation];
+        if (location)
+            [paths addObject: [NSURL fileURLWithPath: location]];
     }
-    else
-    {
-        for (Torrent * torrent in selected)
-        {
-            NSString * location = [torrent dataLocation];
-            if (location)
-                [[NSWorkspace sharedWorkspace] selectFile: location inFileViewerRootedAtPath: nil];
-        }
-    }
+    
+    if ([paths count] > 0)
+        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs: paths];
 }
 
 - (void) announceSelectedTorrents: (id) sender
@@ -1628,10 +1780,8 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [fInfoController updateInfoStats];
         [[fInfoController window] orderFront: nil];
         
-        if ([fInfoController canQuickLook]
-            && [QLPreviewPanelSL sharedPreviewPanelExists] && [[QLPreviewPanelSL sharedPreviewPanel] isVisible])
-            [[QLPreviewPanelSL sharedPreviewPanel] reloadData];
-        
+        if ([fInfoController canQuickLook] && [QLPreviewPanel sharedPreviewPanelExists] && [[QLPreviewPanel sharedPreviewPanel] isVisible])
+            [[QLPreviewPanel sharedPreviewPanel] reloadData];
     }
     
     [[fWindow toolbar] validateVisibleItems];
@@ -1641,9 +1791,8 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 {
     [fInfoController setInfoForTorrents: [fTableView selectedTorrents]];
     
-    if ([NSApp isOnSnowLeopardOrBetter] && [QLPreviewPanelSL sharedPreviewPanelExists]
-        && [[QLPreviewPanelSL sharedPreviewPanel] isVisible])
-        [[QLPreviewPanelSL sharedPreviewPanel] reloadData];
+    if ([QLPreviewPanel sharedPreviewPanelExists] && [[QLPreviewPanel sharedPreviewPanel] isVisible])
+        [[QLPreviewPanel sharedPreviewPanel] reloadData];
 }
 
 - (void) setInfoTab: (id) sender
@@ -1654,22 +1803,28 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [fInfoController setPreviousTab];
 }
 
-- (void) showMessageWindow: (id) sender
+- (MessageWindowController *) messageWindowController
 {
     if (!fMessageController)
         fMessageController = [[MessageWindowController alloc] init];
-    [fMessageController showWindow: nil];
+    
+    return fMessageController;
+}
+
+- (void) showMessageWindow: (id) sender
+{
+    [[self messageWindowController] showWindow: nil];
 }
 
 - (void) showStatsWindow: (id) sender
 {
-    [[StatsWindowController statsWindow: fLib] showWindow: nil];
+    [[StatsWindowController statsWindow] showWindow: nil];
 }
 
 - (void) updateUI
 {
     CGFloat dlRate = 0.0, ulRate = 0.0;
-    BOOL completed = NO;
+    BOOL anyCompleted = NO;
     for (Torrent * torrent in fTorrents)
     {
         [torrent update];
@@ -1678,18 +1833,18 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         dlRate += [torrent downloadRate];
         ulRate += [torrent uploadRate];
         
-        completed |= [torrent isFinishedSeeding];
+        anyCompleted |= [torrent isFinishedSeeding];
     }
     
     if (![NSApp isHidden])
     {
         if ([fWindow isVisible])
         {
-            [self sortTorrents];
+            [self sortTorrents: NO];
             
             [fStatusBar updateWithDownload: dlRate upload: ulRate];
             
-            [fClearCompletedButton setHidden: !completed];
+            [fClearCompletedButton setHidden: !anyCompleted];
         }
 
         //update non-constant parts of info window
@@ -1733,6 +1888,102 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     [fTotalTorrentsField setStringValue: totalTorrentsString];
 }
 
+- (BOOL) userNotificationCenter: (NSUserNotificationCenter *) center shouldPresentNotification:(NSUserNotification *) notification
+{
+    return YES;
+}
+
+- (void) userNotificationCenter: (NSUserNotificationCenter *) center didActivateNotification: (NSUserNotification *) notification
+{
+    if (![notification userInfo])
+        return;
+    
+    if ([notification activationType] == NSUserNotificationActivationTypeActionButtonClicked) //reveal
+    {
+        Torrent * torrent = [self torrentForHash: [[notification userInfo] objectForKey: @"Hash"]];
+        NSString * location = [torrent dataLocation];
+        if (!location)
+            location = [[notification userInfo] objectForKey: @"Location"];
+        if (location)
+            [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs: @[[NSURL fileURLWithPath: location]]];
+    }
+    else if ([notification activationType] == NSUserNotificationActivationTypeContentsClicked)
+    {
+        Torrent * torrent = [self torrentForHash: [[notification userInfo] objectForKey: @"Hash"]];
+        if (torrent)
+        {
+            //select in the table - first see if it's already shown
+            NSInteger row = [fTableView rowForItem: torrent];
+            if (row == -1)
+            {
+                //if it's not shown, see if it's in a collapsed row
+                if ([fDefaults boolForKey: @"SortByGroup"])
+                {
+                    __block TorrentGroup * parent = nil;
+                    [fDisplayedTorrents enumerateObjectsWithOptions: NSEnumerationConcurrent usingBlock: ^(TorrentGroup * group, NSUInteger idx, BOOL *stop) {
+                        if ([[group torrents] containsObject: torrent])
+                        {
+                            parent = group;
+                            *stop = YES;
+                        }
+                    }];
+                    if (parent)
+                    {
+                        [[fTableView animator] expandItem: parent];
+                        row = [fTableView rowForItem: torrent];
+                    }
+                }
+                
+                if (row == -1)
+                {
+                    //not found - must be filtering
+                    NSAssert([fDefaults boolForKey: @"FilterBar"], @"expected the filter to be enabled");
+                    [fFilterBar reset: YES];
+                    
+                    row = [fTableView rowForItem: torrent];
+                    
+                    //if it's not shown, it has to be in a collapsed row...again
+                    if ([fDefaults boolForKey: @"SortByGroup"])
+                    {
+                        __block TorrentGroup * parent = nil;
+                        [fDisplayedTorrents enumerateObjectsWithOptions: NSEnumerationConcurrent usingBlock: ^(TorrentGroup * group, NSUInteger idx, BOOL *stop) {
+                            if ([[group torrents] containsObject: torrent])
+                            {
+                                parent = group;
+                                *stop = YES;
+                            }
+                        }];
+                        if (parent)
+                        {
+                            [[fTableView animator] expandItem: parent];
+                            row = [fTableView rowForItem: torrent];
+                        }
+                    }
+                }
+            }
+            
+            NSAssert1(row != -1, @"expected a row to be found for torrent %@", torrent);
+            [fTableView selectRowIndexes: [NSIndexSet indexSetWithIndex: row] byExtendingSelection:NO];
+            #warning focus the window
+        }
+    }
+}
+
+- (Torrent *) torrentForHash: (NSString *) hash
+{
+    NSParameterAssert(hash != nil);
+    
+    __block Torrent * torrent = nil;
+    [fTorrents enumerateObjectsWithOptions: NSEnumerationConcurrent usingBlock: ^(id obj, NSUInteger idx, BOOL * stop) {
+        if ([[(Torrent *)obj hashString] isEqualToString: hash])
+        {
+            torrent = obj;
+            *stop = YES;
+        }
+    }];
+    return torrent;
+}
+
 - (void) torrentFinishedDownloading: (NSNotification *) notification
 {
     Torrent * torrent = [notification object];
@@ -1750,15 +2001,38 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
             }
         }
         
-        NSMutableDictionary * clickContext = [NSMutableDictionary dictionaryWithObject: GROWL_DOWNLOAD_COMPLETE forKey: @"Type"];
-        
         NSString * location = [torrent dataLocation];
+        
+        NSString * notificationTitle = NSLocalizedString(@"Download Complete", "notification title");
+        if ([NSApp isOnMountainLionOrBetter])
+        {
+            NSUserNotification * notification = [[NSUserNotificationMtLion alloc] init];
+            [notification setTitle: notificationTitle];
+            [notification setInformativeText: [torrent name]];
+            
+            [notification setHasActionButton: YES];
+            [notification setActionButtonTitle: NSLocalizedString(@"Show", "notification button")];
+            
+            NSMutableDictionary * userInfo = [NSMutableDictionary dictionaryWithObject: [torrent hashString] forKey: @"Hash"];
+            if (location)
+                [userInfo setObject: location forKey: @"Location"];
+            [notification setUserInfo: userInfo];
+            
+            [[NSUserNotificationCenterMtLion defaultUserNotificationCenter] deliverNotification: notification];
+            [notification release];
+        }
+        
+        NSMutableDictionary * clickContext = [NSMutableDictionary dictionaryWithObjectsAndKeys:
+                                              GROWL_DOWNLOAD_COMPLETE, @"Type", nil];
+        
         if (location)
             [clickContext setObject: location forKey: @"Location"];
         
-        [GrowlApplicationBridge notifyWithTitle: NSLocalizedString(@"Download Complete", "Growl notification title")
+        [GrowlApplicationBridge notifyWithTitle: notificationTitle
                                     description: [torrent name] notificationName: GROWL_DOWNLOAD_COMPLETE
                                     iconData: nil priority: 0 isSticky: NO clickContext: clickContext];
+        
+        //NSLog(@"delegate: %@", [[NSUserNotificationCenterMtLion defaultUserNotificationCenter] delegate]);
         
         if (![fWindow isMainWindow])
             [fBadger addCompletedTorrent: torrent];
@@ -1771,7 +2045,6 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     [self fullUpdateUI];
 }
 
-#warning remove?
 - (void) torrentRestartedDownloading: (NSNotification *) notification
 {
     [self fullUpdateUI];
@@ -1780,14 +2053,6 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 - (void) torrentFinishedSeeding: (NSNotification *) notification
 {
     Torrent * torrent = [notification object];
-    
-    [self fullUpdateUI];
-    
-    if ([[fTableView selectedTorrents] containsObject: torrent])
-    {
-        [fInfoController updateInfoStats];
-        [fInfoController updateOptions];
-    }
     
     if (!fSoundPlaying && [fDefaults boolForKey: @"PlaySeedingSound"])
     {
@@ -1800,15 +2065,52 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         }
     }
     
+    NSString * location = [torrent dataLocation];
+    
+    NSString * notificationTitle = NSLocalizedString(@"Seeding Complete", "notification title");
+    if ([NSApp isOnMountainLionOrBetter])
+    {
+        NSUserNotification * notification = [[NSUserNotificationMtLion alloc] init];
+        [notification setTitle: notificationTitle];
+        [notification setInformativeText: [torrent name]];
+        
+        [notification setHasActionButton: YES];
+        [notification setActionButtonTitle: NSLocalizedString(@"Show", "notification button")];
+        
+        NSMutableDictionary * userInfo = [NSMutableDictionary dictionaryWithObject: [torrent hashString] forKey: @"Hash"];
+        if (location)
+            [userInfo setObject: location forKey: @"Location"];
+        [notification setUserInfo: userInfo];
+        
+        [[NSUserNotificationCenterMtLion defaultUserNotificationCenter] deliverNotification: notification];
+        [notification release];
+    }
+    
     NSMutableDictionary * clickContext = [NSMutableDictionary dictionaryWithObject: GROWL_SEEDING_COMPLETE forKey: @"Type"];
     
-    NSString * location = [torrent dataLocation];
     if (location)
         [clickContext setObject: location forKey: @"Location"];
     
-    [GrowlApplicationBridge notifyWithTitle: NSLocalizedString(@"Seeding Complete", "Growl notification title")
-                        description: [torrent name] notificationName: GROWL_SEEDING_COMPLETE
-                        iconData: nil priority: 0 isSticky: NO clickContext: clickContext];
+    [GrowlApplicationBridge notifyWithTitle: notificationTitle
+                                description: [torrent name] notificationName: GROWL_SEEDING_COMPLETE
+                                   iconData: nil priority: 0 isSticky: NO clickContext: clickContext];
+    
+    //removing from the list calls fullUpdateUI
+    if ([torrent removeWhenFinishSeeding])
+        [self confirmRemoveTorrents: @[ torrent ] deleteData: NO];
+    else
+    {
+        if (![fWindow isMainWindow])
+            [fBadger addCompletedTorrent: torrent];
+        
+        [self fullUpdateUI];
+        
+        if ([[fTableView selectedTorrents] containsObject: torrent])
+        {
+            [fInfoController updateInfoStats];
+            [fInfoController updateOptions];
+        }
+    }
 }
 
 - (void) updateTorrentHistory
@@ -1818,13 +2120,14 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     for (Torrent * torrent in fTorrents)
         [history addObject: [torrent history]];
     
-    [history writeToFile: [NSHomeDirectory() stringByAppendingPathComponent: TRANSFER_PLIST] atomically: YES];
+    NSString * historyFile = [fConfigDirectory stringByAppendingPathComponent: TRANSFER_PLIST];
+    [history writeToFile: historyFile atomically: YES];
 }
 
 - (void) setSort: (id) sender
 {
     NSString * sortType;
-    switch ([sender tag])
+    switch ([(NSMenuItem *)sender tag])
     {
         case SORT_ORDER_TAG:
             sortType = SORT_ORDER;
@@ -1852,12 +2155,13 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
             sortType = SORT_SIZE;
             break;
         default:
-            NSAssert1(NO, @"Unknown sort tag received: %d", [sender tag]);
+            NSAssert1(NO, @"Unknown sort tag received: %ld", [(NSMenuItem *)sender tag]);
             return;
     }
     
     [fDefaults setObject: sortType forKey: @"Sort"];
-    [self applyFilter]; //better than calling sortTorrents because it will even apply to queue order
+    
+    [self sortTorrents: YES];
 }
 
 - (void) setSortByGroup: (id) sender
@@ -1865,125 +2169,165 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     BOOL sortByGroup = ![fDefaults boolForKey: @"SortByGroup"];
     [fDefaults setBool: sortByGroup forKey: @"SortByGroup"];
     
-    //expand all groups
-    if (sortByGroup)
-        [fTableView removeAllCollapsedGroups];
-    
     [self applyFilter];
 }
 
 - (void) setSortReverse: (id) sender
 {
-    const BOOL setReverse = [sender tag] == SORT_DESC_TAG;
+    const BOOL setReverse = [(NSMenuItem *)sender tag] == SORT_DESC_TAG;
     if (setReverse != [fDefaults boolForKey: @"SortReverse"])
     {
         [fDefaults setBool: setReverse forKey: @"SortReverse"];
-        [self sortTorrents];
+        [self sortTorrents: NO];
     }
 }
 
-- (void) sortTorrents
+- (void) sortTorrents: (BOOL) includeQueueOrder
 {
-    NSArray * selectedValues = [fTableView selectedValues];
+    const BOOL onLion = [NSApp isOnLionOrBetter];
     
-    [self sortTorrentsIgnoreSelected]; //actually sort
+    NSArray * selectedValues;
+    if (!onLion)
+        selectedValues = [fTableView selectedValues];
     
-    [fTableView selectValues: selectedValues];
+    //actually sort
+    [self sortTorrentsCallUpdates: YES includeQueueOrder: includeQueueOrder];
+    
+    if (!onLion)
+        [fTableView selectValues: selectedValues];
+    
+    [fTableView setNeedsDisplay: YES];
 }
 
-- (void) sortTorrentsIgnoreSelected
+- (void) sortTorrentsCallUpdates: (BOOL) callUpdates includeQueueOrder: (BOOL) includeQueueOrder
 {
+    const BOOL asc = ![fDefaults boolForKey: @"SortReverse"];
+    
+    NSArray * descriptors;
+    NSSortDescriptor * nameDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"name" ascending: asc selector: @selector(localizedStandardCompare:)];
+    
     NSString * sortType = [fDefaults stringForKey: @"Sort"];
-    
-    if (![sortType isEqualToString: SORT_ORDER])
+    if ([sortType isEqualToString: SORT_STATE])
     {
-        const BOOL asc = ![fDefaults boolForKey: @"SortReverse"];
+        NSSortDescriptor * stateDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"stateSortKey" ascending: !asc],
+                        * progressDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"progress" ascending: !asc],
+                        * ratioDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"ratio" ascending: !asc];
         
-        NSArray * descriptors;
-        NSSortDescriptor * nameDescriptor = [[[NSSortDescriptor alloc] initWithKey: @"name" ascending: asc
-                                                selector: @selector(compareFinder:)] autorelease];
+        descriptors = [NSArray arrayWithObjects: stateDescriptor, progressDescriptor, ratioDescriptor, nameDescriptor, nil];
+    }
+    else if ([sortType isEqualToString: SORT_PROGRESS])
+    {
+        NSSortDescriptor * progressDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"progress" ascending: asc],
+                        * ratioProgressDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"progressStopRatio" ascending: asc],
+                        * ratioDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"ratio" ascending: asc];
         
-        if ([sortType isEqualToString: SORT_STATE])
-        {
-            NSSortDescriptor * stateDescriptor = [[[NSSortDescriptor alloc] initWithKey: @"stateSortKey" ascending: !asc] autorelease],
-                            * progressDescriptor = [[[NSSortDescriptor alloc] initWithKey: @"progress" ascending: !asc] autorelease],
-                            * ratioDescriptor = [[[NSSortDescriptor alloc] initWithKey: @"ratio" ascending: !asc] autorelease];
-            
-            descriptors = [[NSArray alloc] initWithObjects: stateDescriptor, progressDescriptor, ratioDescriptor,
-                                                                nameDescriptor, nil];
-        }
-        else if ([sortType isEqualToString: SORT_PROGRESS])
-        {
-            NSSortDescriptor * progressDescriptor = [[[NSSortDescriptor alloc] initWithKey: @"progress" ascending: asc] autorelease],
-                            * ratioProgressDescriptor = [[[NSSortDescriptor alloc] initWithKey: @"progressStopRatio"
-                                                            ascending: asc] autorelease],
-                            * ratioDescriptor = [[[NSSortDescriptor alloc] initWithKey: @"ratio" ascending: asc] autorelease];
-            
-            descriptors = [[NSArray alloc] initWithObjects: progressDescriptor, ratioProgressDescriptor, ratioDescriptor,
-                                                                nameDescriptor, nil];
-        }
-        else if ([sortType isEqualToString: SORT_TRACKER])
-        {
-            NSSortDescriptor * trackerDescriptor = [[[NSSortDescriptor alloc] initWithKey: @"trackerSortKey" ascending: asc
-                                                    selector: @selector(localizedCaseInsensitiveCompare:)] autorelease];
-            
-            descriptors = [[NSArray alloc] initWithObjects: trackerDescriptor, nameDescriptor, nil];
-        }
-        else if ([sortType isEqualToString: SORT_ACTIVITY])
-        {
-            NSSortDescriptor * rateDescriptor = [[[NSSortDescriptor alloc] initWithKey: @"totalRate" ascending: !asc] autorelease];
-            NSSortDescriptor * activityDescriptor = [[[NSSortDescriptor alloc] initWithKey: @"dateActivityOrAdd" ascending: !asc]
-                                                        autorelease];
-            
-            descriptors = [[NSArray alloc] initWithObjects: rateDescriptor, activityDescriptor, nameDescriptor, nil];
-        }
-        else if ([sortType isEqualToString: SORT_DATE])
-        {
-            NSSortDescriptor * dateDescriptor = [[[NSSortDescriptor alloc] initWithKey: @"dateAdded" ascending: asc] autorelease];
-            
-            descriptors = [[NSArray alloc] initWithObjects: dateDescriptor, nameDescriptor, nil];
-        }
-        else if ([sortType isEqualToString: SORT_SIZE])
-        {
-            NSSortDescriptor * sizeDescriptor = [[[NSSortDescriptor alloc] initWithKey: @"size" ascending: asc] autorelease];
-            
-            descriptors = [[NSArray alloc] initWithObjects: sizeDescriptor, nameDescriptor, nil];
-        }
-        else
-            descriptors = [[NSArray alloc] initWithObjects: nameDescriptor, nil];
+        descriptors = [NSArray arrayWithObjects: progressDescriptor, ratioProgressDescriptor, ratioDescriptor, nameDescriptor, nil];
+    }
+    else if ([sortType isEqualToString: SORT_TRACKER])
+    {
+        NSSortDescriptor * trackerDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"trackerSortKey" ascending: asc selector: @selector(localizedCaseInsensitiveCompare:)];
         
-        //actually sort
-        if ([fDefaults boolForKey: @"SortByGroup"])
-        {
-            for (TorrentGroup * group in fDisplayedTorrents)
-                [[group torrents] sortUsingDescriptors: descriptors];
-        }
-        else
-            [fDisplayedTorrents sortUsingDescriptors: descriptors];
+        descriptors = [NSArray arrayWithObjects: trackerDescriptor, nameDescriptor, nil];
+    }
+    else if ([sortType isEqualToString: SORT_ACTIVITY])
+    {
+        NSSortDescriptor * rateDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"totalRate" ascending: !asc];
+        NSSortDescriptor * activityDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"dateActivityOrAdd" ascending: !asc];
         
-        [descriptors release];
+        descriptors = [NSArray arrayWithObjects: rateDescriptor, activityDescriptor, nameDescriptor, nil];
+    }
+    else if ([sortType isEqualToString: SORT_DATE])
+    {
+        NSSortDescriptor * dateDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"dateAdded" ascending: asc];
+        
+        descriptors = [NSArray arrayWithObjects: dateDescriptor, nameDescriptor, nil];
+    }
+    else if ([sortType isEqualToString: SORT_SIZE])
+    {
+        NSSortDescriptor * sizeDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"size" ascending: asc];
+        
+        descriptors = [NSArray arrayWithObjects: sizeDescriptor, nameDescriptor, nil];
+    }
+    else if ([sortType isEqualToString: SORT_NAME])
+    {
+        descriptors = [NSArray arrayWithObject: nameDescriptor];
+    }
+    else
+    {
+        NSAssert1([sortType isEqualToString: SORT_ORDER], @"Unknown sort type received: %@", sortType);
+        
+        if (!includeQueueOrder)
+            return;
+        
+        NSSortDescriptor * orderDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"queuePosition" ascending: asc];
+        
+        descriptors = [NSArray arrayWithObject: orderDescriptor];
     }
     
-    [fTableView reloadData];
+    BOOL beganTableUpdate = !callUpdates || ![NSApp isOnLionOrBetter];
+    
+    //actually sort
+    if ([fDefaults boolForKey: @"SortByGroup"])
+    {
+        for (TorrentGroup * group in fDisplayedTorrents)
+            [self rearrangeTorrentTableArray: [group torrents] forParent: group withSortDescriptors: descriptors beganTableUpdate: &beganTableUpdate];
+    }
+    else
+        [self rearrangeTorrentTableArray: fDisplayedTorrents forParent: nil withSortDescriptors: descriptors beganTableUpdate: &beganTableUpdate];
+    
+    if (beganTableUpdate && callUpdates)
+    {
+        if ([NSApp isOnLionOrBetter])
+            [fTableView endUpdates];
+        else
+            [fTableView reloadData];
+    }
+}
+
+#warning redo so that we search a copy once again (best explained by changing sorting from ascending to descending)
+- (void) rearrangeTorrentTableArray: (NSMutableArray *) rearrangeArray forParent: parent withSortDescriptors: (NSArray *) descriptors beganTableUpdate: (BOOL *) beganTableUpdate
+{
+    for (NSUInteger currentIndex = 1; currentIndex < [rearrangeArray count]; ++currentIndex)
+    {
+        //manually do the sorting in-place
+        const NSUInteger insertIndex = [rearrangeArray indexOfObject: [rearrangeArray objectAtIndex: currentIndex] inSortedRange: NSMakeRange(0, currentIndex) options: (NSBinarySearchingInsertionIndex | NSBinarySearchingLastEqual) usingComparator: ^NSComparisonResult(id obj1, id obj2) {
+            for (NSSortDescriptor * descriptor in descriptors)
+            {
+                const NSComparisonResult result = [descriptor compareObject: obj1 toObject: obj2];
+                if (result != NSOrderedSame)
+                    return result;
+            }
+            
+            return NSOrderedSame;
+        }];
+        
+        if (insertIndex != currentIndex)
+        {
+            if (!*beganTableUpdate)
+            {
+                *beganTableUpdate = YES;
+                if ([NSApp isOnLionOrBetter])
+                    [fTableView beginUpdates];
+            }
+            
+            [rearrangeArray moveObjectAtIndex: currentIndex toIndex: insertIndex];
+            if ([NSApp isOnLionOrBetter])
+                [fTableView moveItemAtIndex: currentIndex inParent: parent toIndex: insertIndex inParent: parent];
+        }
+    }
+    
+    NSAssert2([rearrangeArray isEqualToArray: [rearrangeArray sortedArrayUsingDescriptors: descriptors]], @"Torrent rearranging didn't work! %@ %@", rearrangeArray, [rearrangeArray sortedArrayUsingDescriptors: descriptors]);
 }
 
 - (void) applyFilter
 {
-    //get all the torrents in the table
-    NSMutableArray * previousTorrents;
-    if ([fDisplayedTorrents count] > 0 && [[fDisplayedTorrents objectAtIndex: 0] isKindOfClass: [TorrentGroup class]])
-    {
-        previousTorrents = [NSMutableArray array];
-        
-        for (TorrentGroup * group in fDisplayedTorrents)
-            [previousTorrents addObjectsFromArray: [group torrents]];
-    }
-    else
-        previousTorrents = fDisplayedTorrents;
+    const BOOL onLion = [NSApp isOnLionOrBetter];
     
-    NSArray * selectedValues = [fTableView selectedValues];
+    NSArray * selectedValuesSL = nil;
+    if (!onLion)
+        selectedValuesSL = [fTableView selectedValues];
     
-    NSUInteger active = 0, downloading = 0, seeding = 0, paused = 0;
+    __block NSUInteger active = 0, downloading = 0, seeding = 0, paused = 0;
     NSString * filterType = [fDefaults stringForKey: @"Filter"];
     BOOL filterActive = NO, filterDownload = NO, filterSeed = NO, filterPause = NO, filterStatus = YES;
     if ([filterType isEqualToString: FILTER_ACTIVE])
@@ -2005,11 +2349,8 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         searchStrings = nil;
     const BOOL filterTracker = searchStrings && [[fDefaults stringForKey: @"FilterSearchType"] isEqualToString: FILTER_TYPE_TRACKER];
     
-    NSMutableArray * allTorrents = [NSMutableArray arrayWithCapacity: [fTorrents count]];
-    
-    //get count of each type
-    for (Torrent * torrent in fTorrents)
-    {
+    //filter & get counts of each type
+    NSIndexSet * indexesOfNonFilteredTorrents = [fTorrents indexesOfObjectsWithOptions: NSEnumerationConcurrent passingTest: ^BOOL(Torrent * torrent, NSUInteger idx, BOOL * stop) {
         //check status
         if ([torrent isActive] && ![torrent isCheckingWaiting])
         {
@@ -2021,155 +2362,386 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
             {
                 ++seeding;
                 if (filterStatus && !((filterActive && isActive) || filterSeed))
-                    continue;
+                    return NO;
             }
             else
             {
                 ++downloading;
                 if (filterStatus && !((filterActive && isActive) || filterDownload))
-                    continue;
+                    return NO;
             }
         }
         else
         {
             ++paused;
             if (filterStatus && !filterPause)
-                continue;
+                return NO;
         }
         
         //checkGroup
         if (filterGroup)
             if ([torrent groupValue] != groupFilterValue)
-                continue;
+                return NO;
         
         //check text field
         if (searchStrings)
         {
-            BOOL removeTextField = NO;
+            __block BOOL removeTextField = NO;
             if (filterTracker)
             {
                 NSArray * trackers = [torrent allTrackersFlat];
                 
-                //to count, we need each string in atleast 1 tracker
-                for (NSString * searchString in searchStrings)
-                {
-                    BOOL found = NO;
-                    for (NSString * tracker in trackers)
-                    {
-                        if ([tracker rangeOfString: searchString options:
-                             (NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch)].location != NSNotFound)
+                //to count, we need each string in at least 1 tracker
+                [searchStrings enumerateObjectsWithOptions: NSEnumerationConcurrent usingBlock: ^(id searchString, NSUInteger idx, BOOL * stop) {
+                    __block BOOL found = NO;
+                    [trackers enumerateObjectsWithOptions: NSEnumerationConcurrent usingBlock: ^(id tracker, NSUInteger idx, BOOL * stopTracker) {
+                        if ([tracker rangeOfString: searchString options: (NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch)].location != NSNotFound)
                         {
                             found = YES;
-                            break;
+                            *stopTracker = YES;
                         }
-                    }
+                    }];
                     if (!found)
                     {
                         removeTextField = YES;
-                        break;
+                        *stop = YES;
                     }
-                }
+                }];
             }
             else
             {
-                for (NSString * searchString in searchStrings)
+                [searchStrings enumerateObjectsWithOptions: NSEnumerationConcurrent usingBlock: ^(id searchString, NSUInteger idx, BOOL * stop) {
                     if ([[torrent name] rangeOfString: searchString options: (NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch)].location == NSNotFound)
                     {
                         removeTextField = YES;
-                        break;
+                        *stop = YES;
                     }
+                }];
             }
             
             if (removeTextField)
-                continue;
+                return NO;
         }
         
-        [allTorrents addObject: torrent];
-    }
+        return YES;
+    }];
+    
+    NSArray * allTorrents = [fTorrents objectsAtIndexes: indexesOfNonFilteredTorrents];
     
     //set button tooltips
     if (fFilterBar)
         [fFilterBar setCountAll: [fTorrents count] active: active downloading: downloading seeding: seeding paused: paused];
     
-    //clear display cache for not-shown torrents
-    [previousTorrents removeObjectsInArray: allTorrents];
-    for (Torrent * torrent in previousTorrents)
-        [torrent setPreviousFinishedPieces: nil];
+    //if either the previous or current lists are blank, set its value to the other
+    const BOOL groupRows = [allTorrents count] > 0 ? [fDefaults boolForKey: @"SortByGroup"] : ([fDisplayedTorrents count] > 0 && [[fDisplayedTorrents objectAtIndex: 0] isKindOfClass: [TorrentGroup class]]);
+    const BOOL wasGroupRows = [fDisplayedTorrents count] > 0 ? [[fDisplayedTorrents objectAtIndex: 0] isKindOfClass: [TorrentGroup class]] : groupRows;
     
-    //place torrents into groups
-    const BOOL groupRows = [fDefaults boolForKey: @"SortByGroup"];
-    if (groupRows)
+    #warning could probably be merged with later code somehow
+    //clear display cache for not-shown torrents
+    if ([fDisplayedTorrents count] > 0)
     {
-        NSMutableArray * oldTorrentGroups = [NSMutableArray array];
-        if ([fDisplayedTorrents count] > 0 && [[fDisplayedTorrents objectAtIndex: 0] isKindOfClass: [TorrentGroup class]])
-            [oldTorrentGroups addObjectsFromArray: fDisplayedTorrents];
+        //for each torrent, removes the previous piece info if it's not in allTorrents, and keeps track of which torrents we already found in allTorrents
+        void (^removePreviousFinishedPieces)(id, NSUInteger, BOOL *) = ^(Torrent * torrent, NSUInteger idx, BOOL * stop) {
+            //we used to keep track of which torrents we already found in allTorrents, but it wasn't safe fo concurrent enumeration
+            if (![allTorrents containsObject: torrent])
+                [torrent setPreviousFinishedPieces: nil];
+        };
         
-        [fDisplayedTorrents removeAllObjects];
+        if (wasGroupRows)
+            [fDisplayedTorrents enumerateObjectsWithOptions: NSEnumerationConcurrent usingBlock: ^(id obj, NSUInteger idx, BOOL * stop) {
+                [[(TorrentGroup *)obj torrents] enumerateObjectsWithOptions: NSEnumerationConcurrent usingBlock: removePreviousFinishedPieces];
+            }];
+        else
+            [fDisplayedTorrents enumerateObjectsWithOptions: NSEnumerationConcurrent usingBlock: removePreviousFinishedPieces];
+    }
+    
+    BOOL beganUpdates = NO;
+    
+    if (onLion)
+    {
+        //don't animate torrents when first launching
+        static dispatch_once_t onceToken;
+        dispatch_once(&onceToken, ^{
+            [[NSAnimationContext currentContext] setDuration: 0];
+        });
+        [NSAnimationContext beginGrouping];
+    }
+    
+    //add/remove torrents (and rearrange for groups), one by one
+    if (!groupRows && !wasGroupRows)
+    {
+        NSMutableIndexSet * addIndexes = [NSMutableIndexSet indexSet],
+                        * removePreviousIndexes = [NSMutableIndexSet indexSetWithIndexesInRange: NSMakeRange(0, [fDisplayedTorrents count])];
         
-        NSSortDescriptor * groupDescriptor = [[[NSSortDescriptor alloc] initWithKey: @"groupOrderValue" ascending: YES] autorelease];
-        [allTorrents sortUsingDescriptors: [NSArray arrayWithObject: groupDescriptor]];
+        //for each of the torrents to add, find if it already exists (and keep track of those we've already added & those we need to remove)
+        [allTorrents enumerateObjectsWithOptions: 0 usingBlock: ^(id objAll, NSUInteger previousIndex, BOOL * stop) {
+            const NSUInteger currentIndex = [fDisplayedTorrents indexOfObjectAtIndexes: removePreviousIndexes options: NSEnumerationConcurrent passingTest: ^(id objDisplay, NSUInteger idx, BOOL *stop) {
+                return (BOOL)(objAll == objDisplay);
+            }];
+            if (currentIndex == NSNotFound)
+                [addIndexes addIndex: previousIndex];
+            else
+                [removePreviousIndexes removeIndex: currentIndex];
+        }];
         
-        TorrentGroup * group = nil;
-        NSInteger lastGroupValue = -2, currentOldGroupIndex = 0;
-        for (Torrent * torrent in allTorrents)
+        if ([addIndexes count] > 0 || [removePreviousIndexes count] > 0)
         {
-            const NSInteger groupValue = [torrent groupValue];
-            if (groupValue != lastGroupValue)
+            beganUpdates = YES;
+            if (onLion)
+                [fTableView beginUpdates];
+            
+            //remove torrents we didn't find
+            if ([removePreviousIndexes count] > 0)
             {
-                lastGroupValue = groupValue;
-                
-                group = nil;
-                
-                //try to see if the group already exists
-                for (; currentOldGroupIndex < [oldTorrentGroups count]; ++currentOldGroupIndex)
-                {
-                    TorrentGroup * currentGroup = [oldTorrentGroups objectAtIndex: currentOldGroupIndex];
-                    const NSInteger currentGroupValue = [currentGroup groupIndex];
-                    if (currentGroupValue == groupValue)
-                    {
-                        group = currentGroup;
-                        [[currentGroup torrents] removeAllObjects];
-                        
-                        ++currentOldGroupIndex;
-                    }
-                    
-                    if (currentGroupValue >= groupValue)
-                        break;
-                }
-                
-                if (!group)
-                    group = [[[TorrentGroup alloc] initWithGroup: groupValue] autorelease];
-                [fDisplayedTorrents addObject: group];
+                [fDisplayedTorrents removeObjectsAtIndexes: removePreviousIndexes];
+                if (onLion)
+                    [fTableView removeItemsAtIndexes: removePreviousIndexes inParent: nil withAnimation: NSTableViewAnimationSlideDown];
             }
             
-            NSAssert(group != nil, @"No group object to add torrents to");
-            [[group torrents] addObject: torrent];
+            //add new torrents
+            if ([addIndexes count] > 0)
+            {
+                //slide new torrents in differently
+                if (fAddingTransfers)
+                {
+                    NSIndexSet * newAddIndexes = [allTorrents indexesOfObjectsAtIndexes: addIndexes options: NSEnumerationConcurrent passingTest: ^BOOL(id obj, NSUInteger idx, BOOL * stop) {
+                        return [fAddingTransfers containsObject: obj];
+                    }];
+                    
+                    [addIndexes removeIndexes: newAddIndexes];
+                    
+                    [fDisplayedTorrents addObjectsFromArray: [allTorrents objectsAtIndexes: newAddIndexes]];
+                    if (onLion)
+                        [fTableView insertItemsAtIndexes: [NSIndexSet indexSetWithIndexesInRange: NSMakeRange([fDisplayedTorrents count] - [newAddIndexes count], [newAddIndexes count])] inParent: nil withAnimation: NSTableViewAnimationSlideLeft];
+                }
+                
+                [fDisplayedTorrents addObjectsFromArray: [allTorrents objectsAtIndexes: addIndexes]];
+                if (onLion)
+                    [fTableView insertItemsAtIndexes: [NSIndexSet indexSetWithIndexesInRange: NSMakeRange([fDisplayedTorrents count] - [addIndexes count], [addIndexes count])] inParent: nil withAnimation: NSTableViewAnimationSlideDown];
+            }
         }
+    }
+    else if (groupRows && wasGroupRows)
+    {
+        NSAssert(groupRows && wasGroupRows, @"Should have had group rows and should remain with group rows");
+        
+        #warning don't always do?
+        beganUpdates = YES;
+        if (onLion)
+            [fTableView beginUpdates];
+        
+        NSMutableIndexSet * unusedAllTorrentsIndexes = [NSMutableIndexSet indexSetWithIndexesInRange: NSMakeRange(0, [allTorrents count])];
+        
+        NSMutableDictionary * groupsByIndex = [NSMutableDictionary dictionaryWithCapacity: [fDisplayedTorrents count]];
+        for (TorrentGroup * group in fDisplayedTorrents)
+            [groupsByIndex setObject: group forKey: [NSNumber numberWithInteger: [group groupIndex]]];
+        
+        const NSUInteger originalGroupCount = [fDisplayedTorrents count];
+        for (NSUInteger index = 0; index < originalGroupCount; ++index)
+        {
+            TorrentGroup * group = [fDisplayedTorrents objectAtIndex: index];
+            
+            NSMutableIndexSet * removeIndexes = [NSMutableIndexSet indexSet];
+            
+            //needs to be a signed integer
+            for (NSInteger indexInGroup = 0; indexInGroup < [[group torrents] count]; ++indexInGroup)
+            {
+                Torrent * torrent = [[group torrents] objectAtIndex: indexInGroup];
+                const NSUInteger allIndex = [allTorrents indexOfObjectAtIndexes: unusedAllTorrentsIndexes options: NSEnumerationConcurrent passingTest: ^(id obj, NSUInteger idx, BOOL * stop) {
+                    return (BOOL)(obj == torrent);
+                }];
+                if (allIndex == NSNotFound)
+                    [removeIndexes addIndex: indexInGroup];
+                else
+                {
+                    BOOL markTorrentAsUsed = YES;
+                    
+                    const NSInteger groupValue = [torrent groupValue];
+                    if (groupValue != [group groupIndex])
+                    {
+                        TorrentGroup * newGroup = [groupsByIndex objectForKey: [NSNumber numberWithInteger: groupValue]];
+                        if (!newGroup)
+                        {
+                            newGroup = [[[TorrentGroup alloc] initWithGroup: groupValue] autorelease];
+                            [groupsByIndex setObject: newGroup forKey: [NSNumber numberWithInteger: groupValue]];
+                            [fDisplayedTorrents addObject: newGroup];
+                            
+                            if (onLion)
+                            {
+                                [fTableView insertItemsAtIndexes: [NSIndexSet indexSetWithIndex: [fDisplayedTorrents count]-1] inParent: nil withAnimation: NSTableViewAnimationEffectFade];
+                                [fTableView isGroupCollapsed: groupValue] ? [fTableView collapseItem: newGroup] : [fTableView expandItem: newGroup];
+                            }
+                        }
+                        else //if we haven't processed the other group yet, we have to make sure we don't flag it for removal the next time
+                        {
+                            //ugggh, but shouldn't happen too often
+                            if ([fDisplayedTorrents indexOfObject: newGroup inRange: NSMakeRange(index+1, originalGroupCount-(index+1))] != NSNotFound)
+                                markTorrentAsUsed = NO;
+                        }
+                        
+                        [[group torrents] removeObjectAtIndex: indexInGroup];
+                        [[newGroup torrents] addObject: torrent];
+                        
+                        if (onLion)
+                            [fTableView moveItemAtIndex: indexInGroup inParent: group toIndex: [[newGroup torrents] count]-1 inParent: newGroup];
+                        
+                        --indexInGroup;
+                    }
+                    
+                    if (markTorrentAsUsed)
+                        [unusedAllTorrentsIndexes removeIndex: allIndex];
+                }
+            }
+            
+            if ([removeIndexes count] > 0)
+            {
+                [[group torrents] removeObjectsAtIndexes: removeIndexes];
+                if (onLion)
+                    [fTableView removeItemsAtIndexes: removeIndexes inParent: group withAnimation: NSTableViewAnimationEffectFade];
+            }
+        }
+        
+        //add remaining new torrents
+        for (Torrent * torrent in [allTorrents objectsAtIndexes: unusedAllTorrentsIndexes])
+        {
+            const NSInteger groupValue = [torrent groupValue];
+            TorrentGroup * group = [groupsByIndex objectForKey: [NSNumber numberWithInteger: groupValue]];
+            if (!group)
+            {
+                group = [[[TorrentGroup alloc] initWithGroup: groupValue] autorelease];
+                [groupsByIndex setObject: group forKey: [NSNumber numberWithInteger: groupValue]];
+                [fDisplayedTorrents addObject: group];
+                
+                if (onLion)
+                {
+                    [fTableView insertItemsAtIndexes: [NSIndexSet indexSetWithIndex: [fDisplayedTorrents count]-1] inParent: nil withAnimation: NSTableViewAnimationEffectFade];
+                    [fTableView isGroupCollapsed: groupValue] ? [fTableView collapseItem: group] : [fTableView expandItem: group];
+                }
+            }
+            
+            [[group torrents] addObject: torrent];
+            if (onLion)
+            {
+                const BOOL newTorrent = fAddingTransfers && [fAddingTransfers containsObject: torrent];
+                [fTableView insertItemsAtIndexes: [NSIndexSet indexSetWithIndex: [[group torrents] count]-1] inParent: group withAnimation: newTorrent ? NSTableViewAnimationSlideLeft : NSTableViewAnimationSlideDown];
+            }
+        }
+        
+        //remove empty groups
+        NSIndexSet * removeGroupIndexes = [fDisplayedTorrents indexesOfObjectsAtIndexes: [NSIndexSet indexSetWithIndexesInRange: NSMakeRange(0, originalGroupCount)] options: NSEnumerationConcurrent passingTest: ^BOOL(id obj, NSUInteger idx, BOOL * stop) {
+            return [[(TorrentGroup *)obj torrents] count] == 0;
+        }];
+        
+        if ([removeGroupIndexes count] > 0)
+        {
+            [fDisplayedTorrents removeObjectsAtIndexes: removeGroupIndexes];
+            if (onLion)
+                [fTableView removeItemsAtIndexes: removeGroupIndexes inParent: nil withAnimation: NSTableViewAnimationEffectFade];
+        }
+        
+        //now that all groups are there, sort them - don't insert on the fly in case groups were reordered in prefs
+        NSSortDescriptor * groupDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"groupOrderValue" ascending: YES];
+        [self rearrangeTorrentTableArray: fDisplayedTorrents forParent: nil withSortDescriptors: [NSArray arrayWithObject: groupDescriptor] beganTableUpdate: &beganUpdates];
     }
     else
-        [fDisplayedTorrents setArray: allTorrents];
-    
-    //actually sort
-    [self sortTorrentsIgnoreSelected];
-    
-    //reset expanded/collapsed rows
-    if (groupRows)
     {
-        for (TorrentGroup * group in fDisplayedTorrents)
+        NSAssert(groupRows != wasGroupRows, @"Trying toggling group-torrent reordering when we weren't expecting to.");
+        
+        //set all groups as expanded
+        [fTableView removeAllCollapsedGroups];
+        
+        //since we're not doing this the right way (boo buggy animation), we need to remember selected values
+        #warning when Lion-only and using views instead of cells, this likely won't be needed
+        NSArray * selectedValues = [fTableView selectedValues];
+        
+        beganUpdates = YES;
+        if (onLion)
+            [fTableView beginUpdates];
+        
+        if (onLion)
+            [fTableView removeItemsAtIndexes: [NSIndexSet indexSetWithIndexesInRange: NSMakeRange(0, [fDisplayedTorrents count])] inParent: nil withAnimation: NSTableViewAnimationSlideDown];
+        
+        if (groupRows)
         {
-            if ([fTableView isGroupCollapsed: [group groupIndex]])
-                [fTableView collapseItem: group];
-            else
-                [fTableView expandItem: group];
+            //a map for quickly finding groups
+            NSMutableDictionary * groupsByIndex = [NSMutableDictionary dictionaryWithCapacity: [[GroupsController groups] numberOfGroups]];
+            for (Torrent * torrent in allTorrents)
+            {
+                const NSInteger groupValue = [torrent groupValue];
+                TorrentGroup * group = [groupsByIndex objectForKey: [NSNumber numberWithInteger: groupValue]];
+                if (!group)
+                {
+                    group = [[[TorrentGroup alloc] initWithGroup: groupValue] autorelease];
+                    [groupsByIndex setObject: group forKey: [NSNumber numberWithInteger: groupValue]];
+                }
+                
+                [[group torrents] addObject: torrent];
+            }
+            
+            [fDisplayedTorrents setArray: [groupsByIndex allValues]];
+            
+            //we need the groups to be sorted, and we can do it without moving items in the table, too!
+            NSSortDescriptor * groupDescriptor = [NSSortDescriptor sortDescriptorWithKey: @"groupOrderValue" ascending: YES];
+            [fDisplayedTorrents sortUsingDescriptors: [NSArray arrayWithObject: groupDescriptor]];
+        }
+        else
+            [fDisplayedTorrents setArray: allTorrents];
+        
+        if (onLion)
+            [fTableView insertItemsAtIndexes: [NSIndexSet indexSetWithIndexesInRange: NSMakeRange(0, [fDisplayedTorrents count])] inParent: nil withAnimation: NSTableViewAnimationEffectFade];
+        
+        if (groupRows) 
+        { 
+            //actually expand group rows 
+            for (TorrentGroup * group in fDisplayedTorrents) 
+                [fTableView expandItem: group]; 
+        } 
+        
+        if (selectedValues)
+            [fTableView selectValues: selectedValues];
+    }
+    
+    //sort the torrents (won't sort the groups, though)
+    [self sortTorrentsCallUpdates: !beganUpdates includeQueueOrder: YES];
+    
+    if (onLion)
+    {
+        if (beganUpdates)
+            [fTableView endUpdates];
+        [fTableView setNeedsDisplay: YES];
+        
+        [NSAnimationContext endGrouping];
+    }
+    else
+    {
+        [fTableView reloadData];
+        
+        if (groupRows)
+        {
+            for (TorrentGroup * group in fDisplayedTorrents)
+            {
+                if ([fTableView isGroupCollapsed: [group groupIndex]])
+                    [fTableView collapseItem: group];
+                else
+                    [fTableView expandItem: group];
+            }
         }
     }
     
-    [fTableView selectValues: selectedValues];
+    if (!onLion)
+        [fTableView selectValues: selectedValuesSL];
+    
     [self resetInfo]; //if group is already selected, but the torrents in it change
     
     [self setBottomCountText: groupRows || filterStatus || filterGroup || searchStrings];
     
     [self setWindowSizeToFit];
+    
+    if (fAddingTransfers)
+    {
+        [fAddingTransfers release];
+        fAddingTransfers = nil;
+    }
 }
 
 - (void) switchFilter: (id) sender
@@ -2186,7 +2758,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         
         NSPopover * popover = [[NSPopoverLion alloc] init];
         [popover setBehavior: NSPopoverBehaviorTransient];
-        GlobalOptionsPopoverViewController * viewController = [[GlobalOptionsPopoverViewController alloc] initWithHandle: [PrefsController handle]];
+        GlobalOptionsPopoverViewController * viewController = [[GlobalOptionsPopoverViewController alloc] initWithHandle: fLib];
         [popover setContentViewController: viewController];
         [popover setDelegate: self];
         
@@ -2202,16 +2774,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         NSPoint location = rect.origin;
         location.y += NSHeight(rect) + 5.0;
         
-        if ([NSApp isOnSnowLeopardOrBetter])
-            [fActionMenu popUpMenuPositioningItem: nil atLocation: location inView: sender];
-        else
-        {
-            NSEvent * newEvent = [NSEvent mouseEventWithType: NSLeftMouseDown location: location
-                                               modifierFlags: NSLeftMouseDownMask timestamp: GetCurrentEventTime() windowNumber: [fWindow windowNumber]
-                                                     context: nil eventNumber: 1 clickCount: 1 pressure: 1];
-             
-            [NSMenu popUpContextMenu: fActionMenu withEvent: newEvent forView: sender];
-        }
+        [fActionMenu popUpMenuPositioningItem: nil atLocation: location inView: sender];
     }
 }
 
@@ -2290,7 +2853,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     {
         [fTableView removeCollapsedGroup: [torrent groupValue]]; //remove old collapsed group
         
-        [torrent setGroupValue: [sender tag]];
+        [torrent setGroupValue: [(NSMenuItem *)sender tag] determinationType: TorrentDeterminationUserSpecified];
     }
     
     [self applyFilter];
@@ -2398,12 +2961,8 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [fAutoImportTimer release];
         fAutoImportTimer = nil;
     }
-    
-    if (fAutoImportedNames)
-    {
-        [fAutoImportedNames release];
-        fAutoImportedNames = nil;
-    }
+    [fAutoImportedNames release];
+    fAutoImportedNames = nil;
     
     [self checkAutoImportDirectory];
 }
@@ -2448,7 +3007,20 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
             case TR_PARSE_OK:
                 [self openFiles: [NSArray arrayWithObject: fullFile] addType: ADD_AUTO forcePath: nil];
                 
-                [GrowlApplicationBridge notifyWithTitle: NSLocalizedString(@"Torrent File Auto Added", "Growl notification title")
+                NSString * notificationTitle = NSLocalizedString(@"Torrent File Auto Added", "notification title");
+                if ([NSApp isOnMountainLionOrBetter])
+                {
+                    NSUserNotification* notification = [[NSUserNotificationMtLion alloc] init];
+                    [notification setTitle: notificationTitle];
+                    [notification setInformativeText: file];
+                    
+                    [notification setHasActionButton: NO];
+                    
+                    [[NSUserNotificationCenterMtLion defaultUserNotificationCenter] deliverNotification: notification];
+                    [notification release];
+                }
+                
+                [GrowlApplicationBridge notifyWithTitle: notificationTitle
                     description: file notificationName: GROWL_AUTO_ADD iconData: nil priority: 0 isSticky: NO
                     clickContext: nil];
                 break;
@@ -2472,7 +3044,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     if (![fDefaults boolForKey: @"AutoImport"])
         return;
     
-    NSString * location = [notification object],
+    NSString * location = [(NSURL *)[notification object] path],
             * path = [fDefaults stringForKey: @"AutoImportDirectory"];
     
     if (location && path && [[[location stringByDeletingLastPathComponent] stringByExpandingTildeInPath]
@@ -2523,10 +3095,10 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
             return [[GroupsController groups] imageForIndex: group];
         }
         else if ([ident isEqualToString: @"DL Image"])
-            return [NSImage imageNamed: @"DownArrowGroupTemplate.png"];
+            return [NSImage imageNamed: @"DownArrowGroupTemplate"];
         else if ([ident isEqualToString: @"UL Image"])
             return [NSImage imageNamed: [fDefaults boolForKey: @"DisplayGroupRowRatio"]
-                                        ? @"YingYangGroupTemplate.png" : @"UpArrowGroupTemplate.png"];
+                                        ? @"YingYangGroupTemplate" : @"UpArrowGroupTemplate"];
         else
         {
             TorrentGroup * group = (TorrentGroup *)item;
@@ -2592,6 +3164,9 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         }
         else
         {
+            if (index == NSOutlineViewDropOnItemIndex)
+                return NSDragOperationNone;
+            
             if (item)
             {
                 index = [fTableView rowForItem: item] + 1;
@@ -2606,37 +3181,28 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     return NSDragOperationNone;
 }
 
-- (BOOL) outlineView: (NSOutlineView *) outlineView acceptDrop: (id < NSDraggingInfo >) info item: (id) item
-    childIndex: (NSInteger) newRow
+- (BOOL) outlineView: (NSOutlineView *) outlineView acceptDrop: (id < NSDraggingInfo >) info item: (id) item childIndex: (NSInteger) newRow
 {
     NSPasteboard * pasteboard = [info draggingPasteboard];
     if ([[pasteboard types] containsObject: TORRENT_TABLE_VIEW_DATA_TYPE])
     {
         //remember selected rows
-        NSArray * selectedValues = [fTableView selectedValues];
+        NSArray * selectedValues = nil;
+        if (![NSApp isOnLionOrBetter])
+            selectedValues = [fTableView selectedValues];
     
         NSIndexSet * indexes = [NSKeyedUnarchiver unarchiveObjectWithData: [pasteboard dataForType: TORRENT_TABLE_VIEW_DATA_TYPE]];
         
         //get the torrents to move
         NSMutableArray * movingTorrents = [NSMutableArray arrayWithCapacity: [indexes count]];
         for (NSUInteger i = [indexes firstIndex]; i != NSNotFound; i = [indexes indexGreaterThanIndex: i])
-            [movingTorrents addObject: [fTableView itemAtRow: i]];
-        
-        //reset groups
-        if (item)
         {
+            Torrent * torrent = [fTableView itemAtRow: i];
+            [movingTorrents addObject: torrent];
+            
             //change groups
-            NSInteger groupValue = [item groupIndex];
-            for (Torrent * torrent in movingTorrents)
-            {
-                //have to reset objects here to avoid weird crash
-                [[[fTableView parentForItem: torrent] torrents] removeObject: torrent];
-                [[item torrents] addObject: torrent];
-                
-                [torrent setGroupValue: groupValue];
-            }
-            //part 2 of avoiding weird crash
-            [fTableView reloadItem: nil reloadChildren: YES];
+            if (item)
+                [torrent setGroupValue: [item groupIndex] determinationType: TorrentDeterminationUserSpecified];
         }
         
         //reorder queue order
@@ -2659,15 +3225,59 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
             [fTorrents removeObjectsInArray: movingTorrents];
             
             //insert objects at new location
-            NSUInteger insertIndex = topTorrent ? [fTorrents indexOfObject: topTorrent] + 1 : 0;
+            const NSUInteger insertIndex = topTorrent ? [fTorrents indexOfObject: topTorrent] + 1 : 0;
             NSIndexSet * insertIndexes = [NSIndexSet indexSetWithIndexesInRange: NSMakeRange(insertIndex, [movingTorrents count])];
-            for (Torrent * torrent in movingTorrents)
-                [torrent setQueuePosition: insertIndex++];
             [fTorrents insertObjects: movingTorrents atIndexes: insertIndexes];
+            
+            //we need to make sure the queue order is updated in the Torrent object before we sort - safest to just reset all queue positions
+            NSUInteger i = 0;
+            for (Torrent * torrent in fTorrents)
+            {
+                [torrent setQueuePosition: i++];
+                [torrent update];
+            }
+            
+            //do the drag animation here so that the dragged torrents are the ones that are animated as moving, and not the torrents around them
+            const BOOL onLion = [NSApp isOnLionOrBetter];
+            if (onLion)
+                [fTableView beginUpdates];
+            
+            NSUInteger insertDisplayIndex = topTorrent ? [groupTorrents indexOfObject: topTorrent] + 1 : 0;
+            
+            for (Torrent * torrent in movingTorrents)
+            {
+                TorrentGroup * oldParent = item ? [fTableView parentForItem: torrent] : nil;
+                NSMutableArray * oldTorrents = oldParent ? [oldParent torrents] : fDisplayedTorrents;
+                const NSUInteger oldIndex = [oldTorrents indexOfObject: torrent];
+                
+                if (item == oldParent)
+                {
+                    if (oldIndex < insertDisplayIndex)
+                        --insertDisplayIndex;
+                    [oldTorrents moveObjectAtIndex: oldIndex toIndex: insertDisplayIndex];
+                }
+                else
+                {
+                    NSAssert(item && oldParent, @"Expected to be dragging between group rows");
+                    
+                    NSMutableArray * newTorrents = [(TorrentGroup *)item torrents];
+                    [newTorrents insertObject: torrent atIndex: insertDisplayIndex];
+                    [oldTorrents removeObjectAtIndex: oldIndex];
+                }
+                
+                if (onLion)
+                    [fTableView moveItemAtIndex: oldIndex inParent: oldParent toIndex: insertDisplayIndex inParent: item];
+                
+                ++insertDisplayIndex;
+            }
+            
+            if (onLion)
+                [fTableView endUpdates];
         }
         
         [self applyFilter];
-        [fTableView selectValues: selectedValues];
+        if (selectedValues)
+            [fTableView selectValues: selectedValues];
     }
     
     return YES;
@@ -2768,7 +3378,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         else
         {
             if (!torrent && [files count] == 1)
-                [CreatorWindowController createTorrentFile: fLib forFile: [files objectAtIndex: 0]];
+                [CreatorWindowController createTorrentFile: fLib forFile: [NSURL fileURLWithPath: [files objectAtIndex: 0]]];
             else
                 accept = NO;
         }
@@ -2840,6 +3450,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     [fTableView display];
 }
 
+#warning elliminate when 10.7-only
 - (void) toggleStatusString: (id) sender
 {
     if ([fDefaults boolForKey: @"SmallView"])
@@ -2847,7 +3458,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     else
         [fDefaults setBool: ![fDefaults boolForKey: @"DisplayStatusProgressSelected"] forKey: @"DisplayStatusProgressSelected"];
     
-    [fTableView reloadData];
+    [fTableView setNeedsDisplay: YES];
 }
 
 - (NSRect) windowFrameByAddingHeight: (CGFloat) height checkLimits: (BOOL) check
@@ -2865,17 +3476,21 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         const CGFloat minHeight = [self minWindowContentSizeAllowed]
                                     + (NSHeight([fWindow frame]) - NSHeight([[fWindow contentView] frame])); //contentView to window
         
-        if (windowSize.height < minHeight)
-            windowSize.height =minHeight;
+        if (windowSize.height <= minHeight)
+            windowSize.height = minHeight;
         else
         {
-            NSSize maxSize = [scrollView convertSize: [[fWindow screen] visibleFrame].size fromView: nil];
-            if (!fStatusBar)
-                maxSize.height -= STATUS_BAR_HEIGHT;
-            if (!fFilterBar)
-                maxSize.height -= FILTER_BAR_HEIGHT;
-            if (windowSize.height > maxSize.height)
-                windowSize.height = maxSize.height;
+            NSScreen * screen = [fWindow screen];
+            if (screen)
+            {
+                NSSize maxSize = [scrollView convertSize: [screen visibleFrame].size fromView: nil];
+                if (!fStatusBar)
+                    maxSize.height -= STATUS_BAR_HEIGHT;
+                if (!fFilterBar)
+                    maxSize.height -= FILTER_BAR_HEIGHT;
+                if (windowSize.height > maxSize.height)
+                    windowSize.height = maxSize.height;
+            }
         }
     }
 
@@ -2916,7 +3531,6 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [[fStatusBar view] setFrameOrigin: NSMakePoint(0.0, NSMaxY([contentView frame]))];
     }
     
-    NSRect frame;
     CGFloat heightChange = [[fStatusBar view] frame].size.height;
     if (!show)
         heightChange *= -1;
@@ -2924,14 +3538,19 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     //allow bar to show even if not enough room
     if (show && ![fDefaults boolForKey: @"AutoSize"])
     {
-        frame = [self windowFrameByAddingHeight: heightChange checkLimits: NO];
-        CGFloat change = [[fWindow screen] visibleFrame].size.height - frame.size.height;
-        if (change < 0.0)
+        NSRect frame = [self windowFrameByAddingHeight: heightChange checkLimits: NO];
+        
+        NSScreen * screen = [fWindow screen];
+        if (screen)
         {
-            frame = [fWindow frame];
-            frame.size.height += change;
-            frame.origin.y -= change;
-            [fWindow setFrame: frame display: NO animate: NO];
+            CGFloat change = [screen visibleFrame].size.height - frame.size.height;
+            if (change < 0.0)
+            {
+                frame = [fWindow frame];
+                frame.size.height += change;
+                frame.origin.y -= change;
+                [fWindow setFrame: frame display: NO animate: NO];
+            }
         }
     }
     
@@ -2951,7 +3570,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     const NSUInteger scrollMask = [scrollView autoresizingMask];
     [scrollView setAutoresizingMask: NSViewNotSizable];
     
-    frame = [self windowFrameByAddingHeight: heightChange checkLimits: NO];
+    NSRect frame = [self windowFrameByAddingHeight: heightChange checkLimits: NO];
     [fWindow setFrame: frame display: YES animate: animate]; 
     
     //re-enable autoresize
@@ -2988,11 +3607,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     
     //disable filtering when hiding
     if (!show)
-    {
-        [[NSUserDefaults standardUserDefaults] setObject: FILTER_NONE forKey: @"Filter"];
-        [[NSUserDefaults standardUserDefaults] setInteger: GROUP_FILTER_ALL_TAG forKey: @"FilterGroup"];
-        [[NSUserDefaults standardUserDefaults] removeObjectForKey: @"FilterSearchString"];
-    }
+        [fFilterBar reset: NO];
     
     [self applyFilter]; //do even if showing to ensure tooltips are updated
 }
@@ -3033,13 +3648,18 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     if (show && ![fDefaults boolForKey: @"AutoSize"])
     {
         NSRect frame = [self windowFrameByAddingHeight: heightChange checkLimits: NO];
-        const CGFloat change = NSHeight([[fWindow screen] visibleFrame]) - NSHeight(frame);
-        if (change < 0.0)
+        
+        NSScreen * screen = [fWindow screen];
+        if (screen)
         {
-            frame = [fWindow frame];
-            frame.size.height += change;
-            frame.origin.y -= change;
-            [fWindow setFrame: frame display: NO animate: NO];
+            CGFloat change = [screen visibleFrame].size.height - frame.size.height;
+            if (change < 0.0)
+            {
+                frame = [fWindow frame];
+                frame.size.height += change;
+                frame.origin.y -= change;
+                [fWindow setFrame: frame display: NO animate: NO];
+            }
         }
     }
     
@@ -3083,20 +3703,19 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     [fFilterBar focusSearchField];
 }
 
-#warning change from id to QLPreviewPanel
-- (BOOL) acceptsPreviewPanelControl: (id) panel
+- (BOOL) acceptsPreviewPanelControl: (QLPreviewPanel *) panel
 {
     return !fQuitting;
 }
 
-- (void) beginPreviewPanelControl: (id) panel
+- (void) beginPreviewPanelControl: (QLPreviewPanel *) panel
 {
     fPreviewPanel = [panel retain];
     [fPreviewPanel setDelegate: self];
     [fPreviewPanel setDataSource: self];
 }
 
-- (void) endPreviewPanelControl: (id) panel
+- (void) endPreviewPanelControl: (QLPreviewPanel *) panel
 {
     [fPreviewPanel release];
     fPreviewPanel = nil;
@@ -3114,7 +3733,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     return qlArray;
 }
 
-- (NSInteger) numberOfPreviewItemsInPreviewPanel: (id) panel
+- (NSInteger) numberOfPreviewItemsInPreviewPanel: (QLPreviewPanel *) panel
 {
     if ([fInfoController canQuickLook])
         return [[fInfoController quickLookURLs] count];
@@ -3122,7 +3741,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         return [[self quickLookableTorrents] count];
 }
 
-- (id /*<QLPreviewItem>*/) previewPanel: (id) panel previewItemAtIndex: (NSInteger) index
+- (id <QLPreviewItem>) previewPanel: (QLPreviewPanel *) panel previewItemAtIndex: (NSInteger) index
 {
     if ([fInfoController canQuickLook])
         return [[fInfoController quickLookURLs] objectAtIndex: index];
@@ -3130,7 +3749,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         return [[self quickLookableTorrents] objectAtIndex: index];
 }
 
-- (BOOL) previewPanel: (id) panel handleEvent: (NSEvent *) event
+- (BOOL) previewPanel: (QLPreviewPanel *) panel handleEvent: (NSEvent *) event
 {
     /*if ([event type] == NSKeyDown)
     {
@@ -3141,7 +3760,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     return NO;
 }
 
-- (NSRect) previewPanel: (id) panel sourceFrameOnScreenForPreviewItem: (id /*<QLPreviewItem>*/) item
+- (NSRect) previewPanel: (QLPreviewPanel *) panel sourceFrameOnScreenForPreviewItem: (id <QLPreviewItem>) item
 {
     if ([fInfoController canQuickLook])
         return [fInfoController quickLookSourceFrameForPreviewItem: item];
@@ -3193,7 +3812,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [item setLabel: NSLocalizedString(@"Create", "Create toolbar item -> label")];
         [item setPaletteLabel: NSLocalizedString(@"Create Torrent File", "Create toolbar item -> palette label")];
         [item setToolTip: NSLocalizedString(@"Create torrent file", "Create toolbar item -> tooltip")];
-        [item setImage: [NSImage imageNamed: @"ToolbarCreateTemplate.png"]];
+        [item setImage: [NSImage imageNamed: @"ToolbarCreateTemplate"]];
         [item setTarget: self];
         [item setAction: @selector(createFile:)];
         [item setAutovalidates: NO];
@@ -3207,7 +3826,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [item setLabel: NSLocalizedString(@"Open", "Open toolbar item -> label")];
         [item setPaletteLabel: NSLocalizedString(@"Open Torrent Files", "Open toolbar item -> palette label")];
         [item setToolTip: NSLocalizedString(@"Open torrent files", "Open toolbar item -> tooltip")];
-        [item setImage: [NSImage imageNamed: @"ToolbarOpenTemplate.png"]];
+        [item setImage: [NSImage imageNamed: @"ToolbarOpenTemplate"]];
         [item setTarget: self];
         [item setAction: @selector(openShowSheet:)];
         [item setAutovalidates: NO];
@@ -3221,7 +3840,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [item setLabel: NSLocalizedString(@"Open Address", "Open address toolbar item -> label")];
         [item setPaletteLabel: NSLocalizedString(@"Open Torrent Address", "Open address toolbar item -> palette label")];
         [item setToolTip: NSLocalizedString(@"Open torrent web address", "Open address toolbar item -> tooltip")];
-        [item setImage: [NSImage imageNamed: @"ToolbarOpenWebTemplate.png"]];
+        [item setImage: [NSImage imageNamed: @"ToolbarOpenWebTemplate"]];
         [item setTarget: self];
         [item setAction: @selector(openURLShowSheet:)];
         [item setAutovalidates: NO];
@@ -3235,7 +3854,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [item setLabel: NSLocalizedString(@"Remove", "Remove toolbar item -> label")];
         [item setPaletteLabel: NSLocalizedString(@"Remove Selected", "Remove toolbar item -> palette label")];
         [item setToolTip: NSLocalizedString(@"Remove selected transfers", "Remove toolbar item -> tooltip")];
-        [item setImage: [NSImage imageNamed: @"ToolbarRemoveTemplate.png"]];
+        [item setImage: [NSImage imageNamed: @"ToolbarRemoveTemplate"]];
         [item setTarget: self];
         [item setAction: @selector(removeNoDelete:)];
         [item setVisibilityPriority: NSToolbarItemVisibilityPriorityHigh];
@@ -3250,7 +3869,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [item setLabel: NSLocalizedString(@"Inspector", "Inspector toolbar item -> label")];
         [item setPaletteLabel: NSLocalizedString(@"Toggle Inspector", "Inspector toolbar item -> palette label")];
         [item setToolTip: NSLocalizedString(@"Toggle the torrent inspector", "Inspector toolbar item -> tooltip")];
-        [item setImage: [NSImage imageNamed: @"ToolbarInfoTemplate.png"]];
+        [item setImage: [NSImage imageNamed: @"ToolbarInfoTemplate"]];
         [item setTarget: self];
         [item setAction: @selector(showInfo:)];
         
@@ -3280,12 +3899,12 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [groupItem setIdentifiers: [NSArray arrayWithObjects: TOOLBAR_PAUSE_ALL, TOOLBAR_RESUME_ALL, nil]];
         
         [segmentedCell setTag: TOOLBAR_PAUSE_TAG forSegment: TOOLBAR_PAUSE_TAG];
-        [segmentedControl setImage: [NSImage imageNamed: @"ToolbarPauseAllTemplate.png"] forSegment: TOOLBAR_PAUSE_TAG];
+        [segmentedControl setImage: [NSImage imageNamed: @"ToolbarPauseAllTemplate"] forSegment: TOOLBAR_PAUSE_TAG];
         [segmentedCell setToolTip: NSLocalizedString(@"Pause all transfers",
                                     "All toolbar item -> tooltip") forSegment: TOOLBAR_PAUSE_TAG];
         
         [segmentedCell setTag: TOOLBAR_RESUME_TAG forSegment: TOOLBAR_RESUME_TAG];
-        [segmentedControl setImage: [NSImage imageNamed: @"ToolbarResumeAllTemplate.png"] forSegment: TOOLBAR_RESUME_TAG];
+        [segmentedControl setImage: [NSImage imageNamed: @"ToolbarResumeAllTemplate"] forSegment: TOOLBAR_RESUME_TAG];
         [segmentedCell setToolTip: NSLocalizedString(@"Resume all transfers",
                                     "All toolbar item -> tooltip") forSegment: TOOLBAR_RESUME_TAG];
         
@@ -3322,12 +3941,12 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [groupItem setIdentifiers: [NSArray arrayWithObjects: TOOLBAR_PAUSE_SELECTED, TOOLBAR_RESUME_SELECTED, nil]];
         
         [segmentedCell setTag: TOOLBAR_PAUSE_TAG forSegment: TOOLBAR_PAUSE_TAG];
-        [segmentedControl setImage: [NSImage imageNamed: @"ToolbarPauseSelectedTemplate.png"] forSegment: TOOLBAR_PAUSE_TAG];
+        [segmentedControl setImage: [NSImage imageNamed: @"ToolbarPauseSelectedTemplate"] forSegment: TOOLBAR_PAUSE_TAG];
         [segmentedCell setToolTip: NSLocalizedString(@"Pause selected transfers",
                                     "Selected toolbar item -> tooltip") forSegment: TOOLBAR_PAUSE_TAG];
         
         [segmentedCell setTag: TOOLBAR_RESUME_TAG forSegment: TOOLBAR_RESUME_TAG];
-        [segmentedControl setImage: [NSImage imageNamed: @"ToolbarResumeSelectedTemplate.png"] forSegment: TOOLBAR_RESUME_TAG];
+        [segmentedControl setImage: [NSImage imageNamed: @"ToolbarResumeSelectedTemplate"] forSegment: TOOLBAR_RESUME_TAG];
         [segmentedCell setToolTip: NSLocalizedString(@"Resume selected transfers",
                                     "Selected toolbar item -> tooltip") forSegment: TOOLBAR_RESUME_TAG];
         
@@ -3348,7 +3967,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [item setLabel: NSLocalizedString(@"Filter", "Filter toolbar item -> label")];
         [item setPaletteLabel: NSLocalizedString(@"Toggle Filter", "Filter toolbar item -> palette label")];
         [item setToolTip: NSLocalizedString(@"Toggle the filter bar", "Filter toolbar item -> tooltip")];
-        [item setImage: [NSImage imageNamed: @"ToolbarFilterTemplate.png"]];
+        [item setImage: [NSImage imageNamed: @"ToolbarFilterTemplate"]];
         [item setTarget: self];
         [item setAction: @selector(toggleFilterBar:)];
         
@@ -3376,7 +3995,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 - (void) allToolbarClicked: (id) sender
 {
     NSInteger tagValue = [sender isKindOfClass: [NSSegmentedControl class]]
-                    ? [(NSSegmentedCell *)[sender cell] tagForSegment: [sender selectedSegment]] : [sender tag];
+                    ? [(NSSegmentedCell *)[sender cell] tagForSegment: [sender selectedSegment]] : [(NSControl *)sender tag];
     switch (tagValue)
     {
         case TOOLBAR_PAUSE_TAG:
@@ -3391,7 +4010,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 - (void) selectedToolbarClicked: (id) sender
 {
     NSInteger tagValue = [sender isKindOfClass: [NSSegmentedControl class]]
-                    ? [(NSSegmentedCell *)[sender cell] tagForSegment: [sender selectedSegment]] : [sender tag];
+                    ? [(NSSegmentedCell *)[sender cell] tagForSegment: [sender selectedSegment]] : [(NSControl *)sender tag];
     switch (tagValue)
     {
         case TOOLBAR_PAUSE_TAG:
@@ -3484,9 +4103,8 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     //set quick look item
     if ([ident isEqualToString: TOOLBAR_QUICKLOOK])
     {
-        [(NSButton *)[toolbarItem view] setState: [NSApp isOnSnowLeopardOrBetter] && [QLPreviewPanelSL sharedPreviewPanelExists]
-                                                    && [[QLPreviewPanelSL sharedPreviewPanel] isVisible]];
-        return [NSApp isOnSnowLeopardOrBetter];
+        [(NSButton *)[toolbarItem view] setState: [QLPreviewPanel sharedPreviewPanelExists] && [[QLPreviewPanel sharedPreviewPanel] isVisible]];
+        return YES;
     }
 
     return YES;
@@ -3540,7 +4158,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
                 sortType = SORT_SIZE;
                 break;
             default:
-                NSAssert1(NO, @"Unknown sort tag received: %d", [menuItem tag]);
+                NSAssert1(NO, @"Unknown sort tag received: %ld", [menuItem tag]);
         }
         
         [menuItem setState: [sortType isEqualToString: [fDefaults stringForKey: @"Sort"]] ? NSOnState : NSOffState];
@@ -3575,7 +4193,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         return [fWindow isVisible];
     }
     
-    #warning remove when menu is removed
+    #warning remove when menu is removed (10.7-only)
     if (action == @selector(toggleStatusString:))
     {
         if ([fDefaults boolForKey: @"SmallView"])
@@ -3846,14 +4464,13 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     
     if (action == @selector(toggleQuickLook:))
     {
-        const BOOL visible = [NSApp isOnSnowLeopardOrBetter] && [QLPreviewPanelSL sharedPreviewPanelExists]
-                                && [[QLPreviewPanelSL sharedPreviewPanel] isVisible];
+        const BOOL visible =[QLPreviewPanel sharedPreviewPanelExists] && [[QLPreviewPanel sharedPreviewPanel] isVisible];
         //text consistent with Finder
         NSString * title = !visible ? NSLocalizedString(@"Quick Look", "View menu -> Quick Look")
                                     : NSLocalizedString(@"Close Quick Look", "View menu -> Quick Look");
         [menuItem setTitle: title];
         
-        return [NSApp isOnSnowLeopardOrBetter];
+        return YES;
     }
     
     return YES;
@@ -3864,19 +4481,25 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     switch (messageType)
     {
         case kIOMessageSystemWillSleep:
-            //if there are any running transfers, wait 15 seconds for them to stop
+        {
+            //stop all transfers (since some are active) before going to sleep and remember to resume when we wake up
+            BOOL anyActive = NO;
             for (Torrent * torrent in fTorrents)
+            {
                 if ([torrent isActive])
-                {
-                    //stop all transfers (since some are active) before going to sleep and remember to resume when we wake up
-                    for (Torrent * torrent in fTorrents)
-                        [torrent sleep];
-                    sleep(15);
-                    break;
-                }
-
+                    anyActive = YES;
+                [torrent sleep]; //have to call on all, regardless if they are active
+            }
+            
+            //if there are any running transfers, wait 15 seconds for them to stop
+            if (anyActive)
+            {
+                sleep(15);
+            }
+            
             IOAllowPowerChange(fRootPort, (long) messageArgument);
             break;
+        }
 
         case kIOMessageCanSystemSleep:
             if ([fDefaults boolForKey: @"SleepPrevent"])
@@ -3906,7 +4529,7 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     if (fQuitting)
         return nil;
     
-    NSInteger seeding = 0, downloading = 0;
+    NSUInteger seeding = 0, downloading = 0;
     for (Torrent * torrent in fTorrents)
     {
         if ([torrent isSeeding])
@@ -3960,21 +4583,14 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
         [fWindow setFrame: [self sizedWindowFrame] display: YES animate: YES];
         [scrollView setHasVerticalScroller: YES];
         
-        //hack to ensure scrollbars don't disappear after resizing
-        if (![NSApp isOnSnowLeopardOrBetter])
-        {
-            [scrollView setAutohidesScrollers: NO];
-            [scrollView setAutohidesScrollers: YES];
-        }
-        
         [self setWindowMinMaxToCurrent];
     }
 }
 
 - (NSRect) sizedWindowFrame
 {
-    NSInteger groups = ([fDisplayedTorrents count] > 0 && ![[fDisplayedTorrents objectAtIndex: 0] isKindOfClass: [Torrent class]])
-                    ? [fDisplayedTorrents count] : 0;
+    NSUInteger groups = ([fDisplayedTorrents count] > 0 && ![[fDisplayedTorrents objectAtIndex: 0] isKindOfClass: [Torrent class]])
+                        ? [fDisplayedTorrents count] : 0;
     
     CGFloat heightChange = (GROUP_SEPARATOR_HEIGHT + [fTableView intercellSpacing].height) * groups
                         + ([fTableView rowHeight] + [fTableView intercellSpacing].height) * ([fTableView numberOfRows] - groups)
@@ -4044,13 +4660,10 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 
 - (void) toggleQuickLook: (id) sender
 {
-    if (![NSApp isOnSnowLeopardOrBetter])
-        return;
-    
-    if ([[QLPreviewPanelSL sharedPreviewPanel] isVisible])
-        [[QLPreviewPanelSL sharedPreviewPanel] orderOut: nil];
+    if ([[QLPreviewPanel sharedPreviewPanel] isVisible])
+        [[QLPreviewPanel sharedPreviewPanel] orderOut: nil];
     else
-        [[QLPreviewPanelSL sharedPreviewPanel] makeKeyAndOrderFront: nil];
+        [[QLPreviewPanel sharedPreviewPanel] makeKeyAndOrderFront: nil];
 }
 
 - (void) linkHomepage: (id) sender
@@ -4080,102 +4693,94 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
 
 - (NSDictionary *) registrationDictionaryForGrowl
 {
-    NSArray * notifications = [NSArray arrayWithObjects: GROWL_DOWNLOAD_COMPLETE, GROWL_SEEDING_COMPLETE,
-                                                            GROWL_AUTO_ADD, GROWL_AUTO_SPEED_LIMIT, nil];
-    return [NSDictionary dictionaryWithObjectsAndKeys: notifications, GROWL_NOTIFICATIONS_ALL,
-                                notifications, GROWL_NOTIFICATIONS_DEFAULT, nil];
+    NSArray * notifications = @[GROWL_DOWNLOAD_COMPLETE, GROWL_SEEDING_COMPLETE, GROWL_AUTO_ADD, GROWL_AUTO_SPEED_LIMIT];
+    
+    return @{GROWL_NOTIFICATIONS_ALL : notifications,
+                GROWL_NOTIFICATIONS_DEFAULT : notifications };
 }
 
 - (void) growlNotificationWasClicked: (id) clickContext
 {
-    if (!clickContext || ![clickContext isKindOfClass: [NSDictionary class]])
+    if (![clickContext isKindOfClass: [NSDictionary class]])
         return;
     
     NSString * type = [clickContext objectForKey: @"Type"], * location;
     if (([type isEqualToString: GROWL_DOWNLOAD_COMPLETE] || [type isEqualToString: GROWL_SEEDING_COMPLETE])
             && (location = [clickContext objectForKey: @"Location"]))
     {
-        if ([NSApp isOnSnowLeopardOrBetter])
-        {
-            NSURL * file = [NSURL fileURLWithPath: location];
-            [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs: [NSArray arrayWithObject: file]];
-        }
-        else
-            [[NSWorkspace sharedWorkspace] selectFile: location inFileViewerRootedAtPath: nil];
+        NSURL * file = [NSURL fileURLWithPath: location];
+        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs: [NSArray arrayWithObject: file]];
     }
 }
 
 - (void) rpcCallback: (tr_rpc_callback_type) type forTorrentStruct: (struct tr_torrent *) torrentStruct
 {
-    NSAutoreleasePool * pool = [[NSAutoreleasePool alloc] init];
-    
-    //get the torrent
-    Torrent * torrent = nil;
-    if (torrentStruct != NULL && (type != TR_RPC_TORRENT_ADDED && type != TR_RPC_SESSION_CHANGED && type != TR_RPC_SESSION_CLOSE))
+    @autoreleasepool
     {
-        for (torrent in fTorrents)
-            if (torrentStruct == [torrent torrentStruct])
-            {
-                [torrent retain];
-                break;
-            }
-        
-        if (!torrent)
+        //get the torrent
+        Torrent * torrent = nil;
+        if (torrentStruct != NULL && (type != TR_RPC_TORRENT_ADDED && type != TR_RPC_SESSION_CHANGED && type != TR_RPC_SESSION_CLOSE))
         {
-            [pool drain];
+            for (torrent in fTorrents)
+                if (torrentStruct == [torrent torrentStruct])
+                {
+                    [torrent retain];
+                    break;
+                }
             
-            NSLog(@"No torrent found matching the given torrent struct from the RPC callback!");
-            return;
+            if (!torrent)
+            {
+                NSLog(@"No torrent found matching the given torrent struct from the RPC callback!");
+                return;
+            }
+        }
+        
+        switch (type)
+        {
+            case TR_RPC_TORRENT_ADDED:
+                [self performSelectorOnMainThread: @selector(rpcAddTorrentStruct:) withObject:
+                    [[NSValue valueWithPointer: torrentStruct] retain] waitUntilDone: NO];
+                break;
+            
+            case TR_RPC_TORRENT_STARTED:
+            case TR_RPC_TORRENT_STOPPED:
+                [self performSelectorOnMainThread: @selector(rpcStartedStoppedTorrent:) withObject: torrent waitUntilDone: NO];
+                break;
+            
+            case TR_RPC_TORRENT_REMOVING:
+                [self performSelectorOnMainThread: @selector(rpcRemoveTorrent:) withObject: torrent waitUntilDone: NO];
+                break;
+            
+            case TR_RPC_TORRENT_TRASHING:
+                [self performSelectorOnMainThread: @selector(rpcRemoveTorrentDeleteData:) withObject: torrent waitUntilDone: NO];
+                break;
+            
+            case TR_RPC_TORRENT_CHANGED:
+                [self performSelectorOnMainThread: @selector(rpcChangedTorrent:) withObject: torrent waitUntilDone: NO];
+                break;
+            
+            case TR_RPC_TORRENT_MOVED:
+                [self performSelectorOnMainThread: @selector(rpcMovedTorrent:) withObject: torrent waitUntilDone: NO];
+                break;
+            
+            case TR_RPC_SESSION_QUEUE_POSITIONS_CHANGED:
+                [self performSelectorOnMainThread: @selector(rpcUpdateQueue) withObject: nil waitUntilDone: NO];
+                break;
+            
+            case TR_RPC_SESSION_CHANGED:
+                [fPrefsController performSelectorOnMainThread: @selector(rpcUpdatePrefs) withObject: nil waitUntilDone: NO];
+                break;
+            
+            case TR_RPC_SESSION_CLOSE:
+                fQuitRequested = YES;
+                [NSApp performSelectorOnMainThread: @selector(terminate:) withObject: self waitUntilDone: NO];
+                break;
+            
+            default:
+                NSAssert1(NO, @"Unknown RPC command received: %d", type);
+                [torrent release];
         }
     }
-    
-    switch (type)
-    {
-        case TR_RPC_TORRENT_ADDED:
-            [self performSelectorOnMainThread: @selector(rpcAddTorrentStruct:) withObject:
-                [[NSValue valueWithPointer: torrentStruct] retain] waitUntilDone: NO];
-            break;
-        
-        case TR_RPC_TORRENT_STARTED:
-        case TR_RPC_TORRENT_STOPPED:
-            [self performSelectorOnMainThread: @selector(rpcStartedStoppedTorrent:) withObject: torrent waitUntilDone: NO];
-            break;
-        
-        case TR_RPC_TORRENT_REMOVING:
-            [self performSelectorOnMainThread: @selector(rpcRemoveTorrent:) withObject: torrent waitUntilDone: NO];
-            break;
-        
-        case TR_RPC_TORRENT_TRASHING:
-            [self performSelectorOnMainThread: @selector(rpcRemoveTorrentDeleteData:) withObject: torrent waitUntilDone: NO];
-            break;
-        
-        case TR_RPC_TORRENT_CHANGED:
-            [self performSelectorOnMainThread: @selector(rpcChangedTorrent:) withObject: torrent waitUntilDone: NO];
-            break;
-        
-        case TR_RPC_TORRENT_MOVED:
-            [self performSelectorOnMainThread: @selector(rpcMovedTorrent:) withObject: torrent waitUntilDone: NO];
-            break;
-        
-        case TR_RPC_SESSION_QUEUE_POSITIONS_CHANGED:
-            [self performSelectorOnMainThread: @selector(rpcUpdateQueue) withObject: nil waitUntilDone: NO];
-            break;
-        
-        case TR_RPC_SESSION_CHANGED:
-            [fPrefsController performSelectorOnMainThread: @selector(rpcUpdatePrefs) withObject: nil waitUntilDone: NO];
-            break;
-        
-        case TR_RPC_SESSION_CLOSE:
-            fQuitRequested = YES;
-            [NSApp performSelectorOnMainThread: @selector(terminate:) withObject: self waitUntilDone: NO];
-            break;
-        
-        default:
-            NSAssert1(NO, @"Unknown RPC command received: %d", type);
-            [torrent release];
-    }
-    
-    [pool drain];
 }
 
 - (void) rpcAddTorrentStruct: (NSValue *) torrentStructPtr
@@ -4193,25 +4798,29 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     if ([[GroupsController groups] usesCustomDownloadLocationForIndex: [torrent groupValue]])
     {
         location = [[GroupsController groups] customDownloadLocationForIndex: [torrent groupValue]];
-        [torrent changeDownloadFolderBeforeUsing: location];
+        [torrent changeDownloadFolderBeforeUsing: location determinationType: TorrentDeterminationAutomatic];
     }
     
     [torrent update];
     [fTorrents addObject: torrent];
     [torrent release];
     
+    if (!fAddingTransfers)
+        fAddingTransfers = [[NSMutableSet alloc] init];
+    [fAddingTransfers addObject: torrent];
+    
     [self fullUpdateUI];
 }
 
 - (void) rpcRemoveTorrent: (Torrent *) torrent
 {
-    [self confirmRemoveTorrents: [[NSArray arrayWithObject: torrent] retain] deleteData: NO];
+    [self confirmRemoveTorrents: @[ torrent ] deleteData: NO];
     [torrent release];
 }
 
 - (void) rpcRemoveTorrentDeleteData: (Torrent *) torrent
 {
-    [self confirmRemoveTorrents: [[NSArray arrayWithObject: torrent] retain] deleteData: YES];
+    [self confirmRemoveTorrents: @[ torrent ] deleteData: YES];
     [torrent release];
 }
 
@@ -4256,9 +4865,8 @@ static void sleepCallback(void * controller, io_service_t y, natural_t messageTy
     
     NSArray * selectedValues = [fTableView selectedValues];
     
-    NSSortDescriptor * descriptor = [[NSSortDescriptor alloc] initWithKey: @"queuePosition" ascending: YES];
+    NSSortDescriptor * descriptor = [NSSortDescriptor sortDescriptorWithKey: @"queuePosition" ascending: YES];
     NSArray * descriptors = [NSArray arrayWithObject: descriptor];
-    [descriptor release];
     
     [fTorrents sortUsingDescriptors: descriptors];
     

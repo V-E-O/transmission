@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: NSApplicationAdditions.h 12570 2011-07-21 02:35:03Z livings124 $
+ * $Id: NSApplicationAdditions.h 13411 2012-07-25 12:46:49Z livings124 $
  *
- * Copyright (c) 2009-2011 Transmission authors and contributors
+ * Copyright (c) 2009-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,13 +22,15 @@
  * DEALINGS IN THE SOFTWARE.
  *****************************************************************************/
 
-#define QLPreviewPanelSL NSClassFromString(@"QLPreviewPanel")
-#define NSRunningApplicationSL NSClassFromString(@"NSRunningApplication")
 #define NSPopoverLion NSClassFromString(@"NSPopover")
+#define NSDataDetectorLion NSClassFromString(@"NSDataDetector")
+#define NSByteCountFormatterMtLion NSClassFromString(@"NSByteCountFormatter")
+#define NSUserNotificationMtLion NSClassFromString(@"NSUserNotification")
+#define NSUserNotificationCenterMtLion NSClassFromString(@"NSUserNotificationCenter")
 
 @interface NSApplication (NSApplicationAdditions)
 
-- (BOOL) isOnSnowLeopardOrBetter;
 - (BOOL) isOnLionOrBetter;
+- (BOOL) isOnMountainLionOrBetter;
 
 @end

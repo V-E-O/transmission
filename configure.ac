@@ -3,12 +3,10 @@ dnl STATUS: "X" for prerelease beta builds,
 dnl         "Z" for unsupported trunk builds,
 dnl         "0" for stable, supported releases
 dnl these should be the only two lines you need to change
-m4_define([user_agent_prefix],[2.41])
-m4_define([peer_id_prefix],[-TR2410-])
+m4_define([user_agent_prefix],[2.77])
+m4_define([peer_id_prefix],[-TR2770-])
 
-AC_INIT([transmission],
-        [user_agent_prefix],
-        [http://trac.transmissionbt.com/newticket])
+AC_INIT([transmission],[user_agent_prefix],[http://trac.transmissionbt.com/newticket])
 AC_SUBST(USERAGENT_PREFIX,[user_agent_prefix])
 AC_SUBST(PEERID_PREFIX,[peer_id_prefix])
 
@@ -19,7 +17,7 @@ AC_CONFIG_MACRO_DIR([m4])
 dnl AM_CONFIG_HEADER(config.h)
 AC_CONFIG_SRCDIR(libtransmission/transmission.h)
 AM_INIT_AUTOMAKE([1.9 tar-pax])
-AC_PROG_LIBTOOL
+LT_INIT
 
 if test m4_substr(peer_id_prefix,6,1) = "0"; then
   supported_build=yes
@@ -41,7 +39,7 @@ AM_CONDITIONAL(TR_UNSTABLE, test "x$supported_build" = "xno")
 CURL_MINIMUM=7.15.4
 AC_SUBST(CURL_MINIMUM)
 LIBEVENT_MINIMUM=2.0.10
-AC_SUBST(LIBEVENT_MINIUM)
+AC_SUBST(LIBEVENT_MINIMUM)
 OPENSSL_MINIMUM=0.9.4
 AC_SUBST(OPENSSL_MINIMUM)
 
@@ -50,9 +48,10 @@ AC_SUBST(OPENSSL_MINIMUM)
 ##   MANDATORY for the GTK+ client
 ##
 ##
-GTK_MINIMUM=2.22.0
+
+GTK_MINIMUM=3.4.0
 AC_SUBST(GTK_MINIMUM)
-GLIB_MINIMUM=2.28.0
+GLIB_MINIMUM=2.32.0
 AC_SUBST(GLIB_MINIMUM)
 GIO_MINIMUM=2.26.0
 AC_SUBST(GIO_MINIMUM)
@@ -64,12 +63,21 @@ AC_SUBST(GIO_MINIMUM)
 ##
 
 # create the tray icon with AppIndicator
-LIBAPPINDICATOR_MINIMUM=0.0.11
+LIBAPPINDICATOR_MINIMUM=0.4.90
 AC_SUBST(LIBAPPINDICATOR_MINIMUM)
 
 
 AC_PROG_CC
 AC_PROG_CXX
+if test "x$CXX" != "x"; then # CXX is set...
+  if test -f "$CXX"; then # maybe it's an absolute path passed in env variables...
+    AC_MSG_CHECKING([for $CXX])
+    HAVE_CXX="yes"
+    AC_MSG_RESULT([$HAVE_CXX])
+  else
+    AC_CHECK_PROG([HAVE_CXX],[$CXX],[yes],[no])
+  fi
+fi
 AC_C_INLINE
 if test "x$GCC" = "xyes" ; then
 
@@ -97,7 +105,7 @@ AC_HEADER_STDC
 AC_HEADER_TIME
 
 AC_CHECK_HEADERS([stdbool.h])
-AC_CHECK_FUNCS([iconv_open pread pwrite lrintf strlcpy daemon dirname basename strcasecmp localtime_r fallocate64 posix_fallocate memmem strsep strtold syslog valloc getpagesize posix_memalign statvfs htonll ntohll])
+AC_CHECK_FUNCS([iconv_open pread pwrite lrintf strlcpy daemon dirname basename strcasecmp localtime_r fallocate64 posix_fallocate memmem strsep strtold syslog valloc getpagesize posix_memalign statvfs htonll ntohll mkdtemp])
 AC_PROG_INSTALL
 AC_PROG_MAKE_SET
 ACX_PTHREAD
@@ -133,55 +141,38 @@ dnl ----------------------------------------------------------------------------
 dnl
 dnl file monitoring for the daemon
 
-AC_CHECK_HEADER([sys/inotify.h], 
-                [AC_CHECK_FUNC([inotify_init],[have_inotify="yes"],[have_inotify="no"])], 
-                [have_inotify="no"]) 
-AC_ARG_WITH([inotify], 
-            [AS_HELP_STRING([--with-inotify],[Enable inotify support (default=auto)])], 
-            [want_inotify=${withval}], 
-            [want_inotify=${have_inotify}]) 
-if test "x$want_inotify" = "xyes" ; then 
-    if test "x$have_inotify" = "xyes"; then 
-      AC_DEFINE([WITH_INOTIFY],[1]) 
-    else 
-      AC_MSG_ERROR("inotify not found!") 
-    fi 
-fi 
- 
-AC_CHECK_HEADER([sys/event.h], 
-                [AC_CHECK_FUNC([kqueue],[have_kqueue="yes"],[have_kqueue="no"])], 
-                [have_kqueue="no"]) 
-AC_ARG_WITH([kqueue], 
-            [AS_HELP_STRING([--with-kqueue],[Enable kqueue support (default=auto)])], 
-            [want_kqueue=${withval}], 
-            [want_kqueue=${have_kqueue}]) 
-if test "x$want_kqueue" = "xyes" ; then 
-    if test "x$have_kqueue" = "xyes"; then 
-      AC_DEFINE([WITH_KQUEUE],[1]) 
-    else 
-      AC_MSG_ERROR("kqueue not found!") 
-    fi 
-fi 
+AC_CHECK_HEADER([sys/inotify.h],
+                [AC_CHECK_FUNC([inotify_init],[have_inotify="yes"],[have_inotify="no"])],
+                [have_inotify="no"])
+AC_ARG_WITH([inotify],
+            [AS_HELP_STRING([--with-inotify],[Enable inotify support (default=auto)])],
+            [want_inotify=${withval}],
+            [want_inotify=${have_inotify}])
+if test "x$want_inotify" = "xyes" ; then
+    if test "x$have_inotify" = "xyes"; then
+      AC_DEFINE([WITH_INOTIFY],[1])
+    else
+      AC_MSG_ERROR("inotify not found!")
+    fi
+fi
+
+AC_CHECK_HEADER([sys/event.h],
+                [AC_CHECK_FUNC([kqueue],[have_kqueue="yes"],[have_kqueue="no"])],
+                [have_kqueue="no"])
+AC_ARG_WITH([kqueue],
+            [AS_HELP_STRING([--with-kqueue],[Enable kqueue support (default=auto)])],
+            [want_kqueue=${withval}],
+            [want_kqueue=${have_kqueue}])
+if test "x$want_kqueue" = "xyes" ; then
+    if test "x$have_kqueue" = "xyes"; then
+      AC_DEFINE([WITH_KQUEUE],[1])
+    else
+      AC_MSG_ERROR("kqueue not found!")
+    fi
+fi
 
 AC_CHECK_HEADERS([sys/statvfs.h \
                   xfs/xfs.h])
-
-
-dnl ----------------------------------------------------------------------------
-dnl
-dnl va_copy
-
-AC_MSG_CHECKING([how to copy va_list])
-AC_TRY_LINK([#include <stdarg.h>], [va_list ap1, ap2; va_copy(ap1, ap2);],
-    AC_MSG_RESULT([va_copy]),
-        [ AH_TEMPLATE([va_copy], [define if va_copy is not available])
-        AC_TRY_LINK([#include <stdarg.h>], [va_list ap1, ap2; __va_copy(ap1, ap2);],
-        [ AC_DEFINE([va_copy], [__va_copy])
-        AC_MSG_RESULT([__va_copy])],
-        [ AC_DEFINE([va_copy(dest,src)], [memcpy(&dest,&src,sizeof(va_list))])
-        AC_MSG_RESULT([memcpy])]
-    )
-])
 
 
 dnl ----------------------------------------------------------------------------
@@ -205,7 +196,7 @@ AC_CHECK_LIB([rt],
 
 AC_MSG_CHECKING([µTP])
 build_utp="no"
-if test "x$CXX" != "x" ; then
+if test "x$HAVE_CXX" = "xyes" ; then
     have_utp="yes"
 else
     have_utp="no"
@@ -225,10 +216,10 @@ if test "x$want_utp" = "xyes" ; then
         fi
         AC_DEFINE([WITH_UTP],[1])
         build_utp="yes"
-    else 
-      AC_MSG_ERROR("Unable to build uTP support -- C++ compiler not found") 
-    fi 
-fi 
+    else
+      AC_MSG_ERROR("Unable to build uTP support -- C++ compiler not found")
+    fi
+fi
 AC_SUBST(LIBUTP_CFLAGS)
 AC_SUBST(LIBUTP_LIBS)
 AC_SUBST(LIBUTP_LIBS_QT)
@@ -240,70 +231,19 @@ dnl
 dnl  look for preinstalled miniupnpc...
 dnl
 
+AC_MSG_CHECKING([supported miniupnp library])
+upnp_version="none"
 ac_save_LIBS="$LIBS"
 LIBS="-lminiupnpc"
-AC_MSG_CHECKING([system miniupnpc library])
-
-dnl See if ANY version of miniupnpc is installed
-AC_LINK_IFELSE(
-  [AC_LANG_PROGRAM([#include <miniupnpc/miniupnpc.h>],
-                   [struct UPNPDev dev;])],
-  [upnp_version="unknown"],
-  [upnp_version="none"]
-)
-
-dnl Let's hope it's 1.7 or higher, since it provides
-dnl MINIUPNPC_API_VERSION and we won't have to figure
-dnl it out on our own
-if test "x$upnp_version" = "xunknown" ; then
-  AC_RUN_IFELSE(
-    [AC_LANG_PROGRAM(
-      [#include <stdlib.h>
-       #include <miniupnpc/miniupnpc.h>],
-      [#ifdef MINIUPNPC_API_VERSION
-       return EXIT_SUCCESS;
-       #else
-       return EXIT_FAILURE;
-       #endif]
-    )],
-    [upnp_version=">= 1.7"]
-  )
-fi
-
-dnl Or maybe it's miniupnp 1.6
-if test "x$upnp_version" = "xunknown" ; then
-  AC_LINK_IFELSE([AC_LANG_PROGRAM([[
-    #include <stdlib.h>
-    #include <errno.h>
-    #include <miniupnpc/miniupnpc.h>
-    #include <miniupnpc/upnpcommands.h>
-  ]], [[
-    struct UPNPDev * devlist;
-    struct UPNPUrls urls;
-    struct IGDdatas data;
-    char lanaddr[16];
-    char portStr[8];
-    char intPort[8];
-    char intClient[16];
-    upnpDiscover( 2000, NULL, NULL, 0, 0, &errno );
-    UPNP_GetValidIGD( devlist, &urls, &data, lanaddr, sizeof( lanaddr ) ); 
-    UPNP_GetSpecificPortMappingEntry( urls.controlURL, data.first.servicetype,
-                        portStr, "TCP", intClient, intPort, NULL, NULL, NULL );
-  ]])],[
-  AC_DEFINE(MINIUPNPC_API_VERSION, 8, [miniupnpc 1.6 has API version 8])
-  upnp_version="1.6"])
-fi
-
-dnl Or maybe it's miniupnp 1.5
-if test "x$upnp_version" = "xunknown" ; then
-  AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+# See if the OS has its miniupnp 1.5 installed
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[
     #include <stdlib.h>
     #include <miniupnpc/miniupnpc.h>
     #include <miniupnpc/upnpcommands.h>
-  ]], [[
+]], [[
     struct UPNPDev * devlist;
-    struct UPNPUrls urls;
-    struct IGDdatas data;
+    struct UPNPUrls    urls;
+    struct IGDdatas    data;
     char lanaddr[16];
     char portStr[8];
     char intPort[8];
@@ -312,10 +252,31 @@ if test "x$upnp_version" = "xunknown" ; then
     UPNP_GetValidIGD( devlist, &urls, &data, lanaddr, sizeof( lanaddr ) ); 
     UPNP_GetSpecificPortMappingEntry( urls.controlURL, data.first.servicetype,
                         portStr, "TCP", intClient, intPort );
-  ]])],[
-  AC_DEFINE(MINIUPNPC_API_VERSION, 5, [miniupnpc 1.5 has API version 5])
-  upnp_version="1.5"])
-fi
+]])],[
+AC_DEFINE(HAVE_MINIUPNP_15, 1, [Define to 1 if you have miniupnpc version 1.5])
+upnp_version="1.5"],[])
+
+# See if the OS has its miniupnp 1.6 installed
+AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+    #include <stdlib.h>
+    #include <errno.h>
+    #include <miniupnpc/miniupnpc.h>
+    #include <miniupnpc/upnpcommands.h>
+]], [[
+    struct UPNPDev * devlist;
+    struct UPNPUrls    urls;
+    struct IGDdatas    data;
+    char lanaddr[16];
+    char portStr[8];
+    char intPort[8];
+    char intClient[16];
+    upnpDiscover( 2000, NULL, NULL, 0, 0, &errno );
+    UPNP_GetValidIGD( devlist, &urls, &data, lanaddr, sizeof( lanaddr ) ); 
+    UPNP_GetSpecificPortMappingEntry( urls.controlURL, data.first.servicetype,
+                        portStr, "TCP", intClient, intPort, NULL, NULL, NULL );
+]])],[
+AC_DEFINE(HAVE_MINIUPNP_16, 1, [Define to 1 if you have miniupnpc version 1.6])
+upnp_version="1.6"],[])
 
 # ... and the results of our tests
 LIBS="$ac_save_LIBS"
@@ -325,6 +286,8 @@ if test "x$upnp_version" = "xnone" ; then
     LIBUPNP_CFLAGS="-I\$(top_srcdir)/third-party/"
     LIBUPNP_LIBS="\$(top_builddir)/third-party/miniupnp/libminiupnp.a"
     LIBUPNP_LIBS_QT="\$\${TRANSMISSION_TOP}/third-party/miniupnp/libminiupnp.a"
+    dnl because this is the version that we bundle...
+    AC_DEFINE(HAVE_MINIUPNP_16, 1, [Define to 1 if you have miniupnpc version 1.6])
 else
     AC_DEFINE([SYSTEM_MINIUPNP])
     LIBUPNP_CFLAGS="" 
@@ -367,57 +330,43 @@ dnl ----------------------------------------------------------------------------
 dnl
 dnl  detection for the GTK+ client
 
-PKG_CHECK_MODULES(GTK,
-                  [gtk+-2.0 >= $GTK_MINIMUM
-                   glib-2.0 >= $GLIB_MINIMUM
-                   gio-2.0 >= $GIO_MINIMUM,
-                   gmodule-2.0 >= $GLIB_MINIMUM
-                   gthread-2.0 >= $GLIB_MINIMUM],
-                  [have_gtk=yes],
-                  [have_gtk=no])
-AC_ARG_ENABLE([gtk],
-              AS_HELP_STRING([--enable-gtk],[build gtk client]),
-              [want_gtk=${enableval}],
-              [want_gtk=${have_gtk}])
-build_gtk=no
+AC_ARG_ENABLE([nls],
+              [AS_HELP_STRING([--enable-nls],[enable native language support])],,
+              [enable_nls=yes])
+PKG_CHECK_EXISTS([gtk+-3.0 >= $GTK_MINIMUM
+                  glib-2.0 >= $GLIB_MINIMUM
+                  gio-2.0 >= $GIO_MINIMUM,
+                  gmodule-2.0 >= $GLIB_MINIMUM
+                  gthread-2.0 >= $GLIB_MINIMUM],
+                 [have_gtk=yes],
+                 [have_gtk=no])
+AC_ARG_WITH([gtk], AS_HELP_STRING([--with-gtk],[with Gtk]),
+            [with_gtk=$withval],
+            [with_gtk=$have_gtk])
+AM_CONDITIONAL([BUILD_GTK],[test "x$with_gtk" = "xyes"])
 use_libappindicator=no
-if test "x$want_gtk" = "xyes" ; then
-    if test "x$have_gtk" = "xyes"; then
-      build_gtk=yes
-    else
-      AC_MSG_ERROR("GTK+ not found!")
+if test "x$with_gtk" = "xyes" ; then
+
+    if test "x$enable_nls" = "xno" ; then
+        AC_MSG_ERROR("The gtk client cannot be built without nls support.  Try adding either --enable-nls or --without-gtk" )
     fi
-fi
-AM_CONDITIONAL([BUILD_GTK],[test "x$build_gtk" = "xyes"])
 
-if test "x$build_gtk" = "xyes"; then
-
+    PKG_CHECK_MODULES([GTK], [gtk+-3.0 >= $GTK_MINIMUM
+                              glib-2.0 >= $GLIB_MINIMUM
+                              gio-2.0 >= $GIO_MINIMUM,
+                              gmodule-2.0 >= $GLIB_MINIMUM
+                              gthread-2.0 >= $GLIB_MINIMUM])
     PKG_CHECK_MODULES([LIBAPPINDICATOR],
-                      [appindicator-0.1 >= $LIBAPPINDICATOR_MINIMUM],
+                      [appindicator3-0.1 >= $LIBAPPINDICATOR_MINIMUM],
                       [have_libappindicator=yes],
                       [have_libappindicator=no])
-
-    AC_ARG_ENABLE([libappindicator], 
-                  AS_HELP_STRING([--enable-libappindicator],[enable AppIndicator support]),, 
-                  [enable_libappindicator=yes])
-    use_libappindicator=no
     if test "x$have_libappindicator" = "xyes"; then
-        if test "x$enable_libappindicator" = "xyes" ; then
-            use_libappindicator=yes
-            AC_DEFINE([HAVE_LIBAPPINDICATOR], 1) 
-        else
-            LIBAPPINDICATOR_CFLAGS=
-            LIBAPPINDICATOR_LIBS=
-        fi
+        use_libappindicator=yes
+        AC_DEFINE([HAVE_LIBAPPINDICATOR], 1)
+    else
+        LIBAPPINDICATOR_CFLAGS=
+        LIBAPPINDICATOR_LIBS=
     fi
-fi
-
-AC_ARG_ENABLE([nls], 
-              AS_HELP_STRING([--enable-nls],[enable native language support]),,
-              [enable_nls=yes])
-
-if test "x$build_gtk" = "xyes" -a  "x$enable_nls" = "xno" ; then
-    AC_MSG_ERROR("The gtk client cannot be built without nls support.  Try adding either --enable-nls or --disable-gtk" )
 fi
 
 dnl This section is only used for internationalization.
@@ -433,7 +382,9 @@ dnl it should be safe to re-edit 0.40 back down to 0.23
 use_nls=no
 if test "x$enable_nls" = "xyes" ; then
     use_nls=yes
-    IT_PROG_INTLTOOL([0.35.0],[no-xml])
+    m4_ifdef([IT_PROG_INTLTOOL],
+             [IT_PROG_INTLTOOL([0.35.0],[no-xml])],
+             [AC_MSG_ERROR("--enable-nls requires intltool to be installed.")])
     AC_CHECK_HEADERS([libintl.h])
     GETTEXT_PACKAGE=transmission-gtk
     AC_SUBST(GETTEXT_PACKAGE)
@@ -479,9 +430,9 @@ AC_ARG_ENABLE([lightweight],
               AS_HELP_STRING([--enable-lightweight],[optimize libtransmission for low-resource systems: smaller cache size, prefer unencrypted peer connections, etc.]),
               [enable_lightweight=${enableval}],
               [enable_lightweight="no"])
-if test "x$enable_lightweight" = "xyes" ; then 
+if test "x$enable_lightweight" = "xyes" ; then
   AC_DEFINE([TR_LIGHTWEIGHT],[1],[optimize libtransmission for low-resource systems])
-fi 
+fi
 
 AC_ARG_ENABLE([cli],
               [AS_HELP_STRING([--enable-cli],[build command-line client])],
@@ -537,21 +488,24 @@ AC_CONFIG_FILES([Makefile
                  libtransmission/Makefile
                  utils/Makefile
                  third-party/Makefile
-                 third-party/miniupnp/Makefile
-                 third-party/libnatpmp/Makefile
-                 third-party/libutp/Makefile
                  third-party/dht/Makefile
+                 third-party/libutp/Makefile
+                 third-party/libnatpmp/Makefile
+                 third-party/miniupnp/Makefile
                  macosx/Makefile
                  gtk/Makefile
                  gtk/icons/Makefile
+                 qt/config.pri
                  web/Makefile
                  web/images/Makefile
-                 web/images/buttons/Makefile
-                 web/images/graphics/Makefile
-                 web/images/progress/Makefile
+                 web/style/Makefile
+                 web/style/jqueryui/Makefile
+                 web/style/jqueryui/images/Makefile
+                 web/style/transmission/Makefile
+                 web/style/transmission/images/Makefile
+                 web/style/transmission/images/buttons/Makefile
                  web/javascript/Makefile
                  web/javascript/jquery/Makefile
-                 web/stylesheets/Makefile
                  po/Makefile.in])
 
 AC_OUTPUT
@@ -569,7 +523,7 @@ Configuration:
 
    Build Command-Line client:                         ${build_cli}
 
-   Build GTK+ client:                                 ${build_gtk}
+   Build GTK+ client:                                 ${with_gtk}
       * libappindicator for an Ubuntu-style tray:     ${use_libappindicator}
 
    Build Daemon:                                      ${build_daemon}

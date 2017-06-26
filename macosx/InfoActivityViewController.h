@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: InfoActivityViewController.h 11617 2011-01-01 20:42:14Z livings124 $
+ * $Id: InfoActivityViewController.h 13541 2012-09-27 00:17:43Z livings124 $
  *
- * Copyright (c) 2010-2011 Transmission authors and contributors
+ * Copyright (c) 2010-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -39,11 +39,18 @@
                         * fHaveField, * fDownloadedTotalField, * fUploadedTotalField, * fFailedHashField,
                         * fRatioField,
                         * fDownloadTimeField, * fSeedTimeField;
-    
     IBOutlet NSTextView * fErrorMessageView;
     
     IBOutlet PiecesView * fPiecesView;
     IBOutlet NSSegmentedControl * fPiecesControl;
+    
+    //remove when we switch to auto layout on 10.7
+    IBOutlet NSTextField * fTransferSectionLabel, * fDatesSectionLabel, * fTimeSectionLabel;
+    IBOutlet NSTextField * fStateLabel, * fProgressLabel, * fHaveLabel, * fDownloadedLabel, * fUploadedLabel,
+                        * fFailedDLLabel, * fRatioLabel, * fErrorLabel,
+                        * fDateAddedLabel, * fDateCompletedLabel, * fDateActivityLabel,
+                        * fDownloadTimeLabel, * fSeedTimeLabel;
+    IBOutlet NSScrollView * fErrorScrollView;
 }
 
 - (void) setInfoForTorrents: (NSArray *) torrents;

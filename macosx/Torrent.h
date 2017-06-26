@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: Torrent.h 12773 2011-08-28 00:07:30Z livings124 $
+ * $Id: Torrent.h 13602 2012-10-30 00:22:10Z livings124 $
  *
- * Copyright (c) 2006-2011 Transmission authors and contributors
+ * Copyright (c) 2006-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -28,8 +28,14 @@
 
 @class FileListNode;
 
-#warning uncomment
-@interface Torrent : NSObject <NSCopying>//, QLPreviewItem>
+typedef enum {
+	TorrentDeterminationAutomatic = 0,
+	TorrentDeterminationUserSpecified
+} TorrentDeterminationType;
+
+#define kTorrentDidChangeGroupNotification @"TorrentDidChangeGroup"
+
+@interface Torrent : NSObject <NSCopying, QLPreviewItem>
 {
     tr_torrent * fHandle;
     const tr_info * fInfo;
@@ -47,11 +53,16 @@
     NSIndexSet * fPreviousFinishedIndexes;
     NSDate * fPreviousFinishedIndexesDate;
     
+    BOOL fRemoveWhenFinishSeeding;
+    
     NSInteger fGroupValue;
+	TorrentDeterminationType fGroupValueDetermination;
+	
+	TorrentDeterminationType fDownloadFolderDetermination;
     
     BOOL fResumeOnWake;
     
-    NSString * fTimeMachineExclude;
+    BOOL fTimeMachineExcludeInitialized;
 }
 
 - (id) initWithPath: (NSString *) path location: (NSString *) location deleteTorrentFile: (BOOL) torrentDelete
@@ -64,7 +75,7 @@
 
 - (void) closeRemoveTorrent: (BOOL) trashFiles;
 
-- (void) changeDownloadFolderBeforeUsing: (NSString *) folder;
+- (void) changeDownloadFolderBeforeUsing: (NSString *) folder determinationType: (TorrentDeterminationType) determinationType;
 
 - (NSString *) currentDirectory;
 
@@ -114,6 +125,8 @@
 
 - (void) setMaxPeerConnect: (uint16_t) count;
 - (uint16_t) maxPeerConnect;
+
+@property (nonatomic) BOOL removeWhenFinishSeeding;
 
 - (BOOL) waitingToStart;
 
@@ -203,7 +216,7 @@
 - (uint64_t) failedHash;
 
 - (NSInteger) groupValue;
-- (void) setGroupValue: (NSInteger) groupValue;
+- (void) setGroupValue: (NSInteger) groupValue determinationType: (TorrentDeterminationType) determinationType;;
 - (NSInteger) groupOrderValue;
 - (void) checkGroupValueForRemoval: (NSNotification *) notification;
 

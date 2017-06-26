@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: URLSheetWindowController.m 12152 2011-03-13 14:38:49Z jordan $
+ * $Id: URLSheetWindowController.m 13254 2012-03-13 03:39:56Z livings124 $
  *
- * Copyright (c) 2011 Transmission authors and contributors
+ * Copyright (c) 2011-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -80,12 +80,6 @@ NSString * urlString = nil;
     [fCancelButton setFrame: cancelFrame];
 }
 
-- (IBAction) beginSheetForWindow: (NSWindow *) window
-{
-    [NSApp beginSheet: [self window] modalForWindow: window modalDelegate: self
-        didEndSelector: @selector(sheetDidEnd:returnCode:contextInfo:) contextInfo: nil];
-}
-
 - (void) openURLEndSheet: (id) sender
 {
     [[self window] orderOut: sender];
@@ -98,11 +92,9 @@ NSString * urlString = nil;
     [NSApp endSheet: [self window] returnCode: 0];
 }
 
-- (void) sheetDidEnd: (NSWindow *) sheet returnCode: (NSInteger) returnCode contextInfo: (void *) contextInfo
+- (NSString *) urlString
 {
-    [urlString release];
-    urlString = [[fTextField stringValue] retain];
-    [fController urlSheetDidEnd: self url: urlString returnCode: returnCode];
+    return [[[fTextField stringValue] retain] autorelease];
 }
 
 - (void) controlTextDidChange: (NSNotification *) notification

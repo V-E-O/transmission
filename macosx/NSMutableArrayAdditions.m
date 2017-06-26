@@ -1,7 +1,7 @@
 /******************************************************************************
  * $Id$
  *
- * Copyright (c) 2011 Transmission authors and contributors
+ * Copyright (c) 2011-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -26,6 +26,11 @@
 
 @implementation NSMutableArray (NSMutableArrayAdditions)
 
+/*
+ Note: This assumes Apple implemented this as an array under the hood.
+ If the underlying data structure is a linked-list, for example, then this might be less
+ efficient than simply removing the object and re-adding it.
+ */
 - (void) moveObjectAtIndex: (NSUInteger) fromIndex toIndex: (NSUInteger) toIndex
 {
     if (fromIndex == toIndex)

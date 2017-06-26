@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: NSStringAdditions.m 12910 2011-09-24 19:38:04Z livings124 $
+ * $Id: NSStringAdditions.m 13510 2012-09-22 16:09:52Z livings124 $
  *
- * Copyright (c) 2005-2011 Transmission authors and contributors
+ * Copyright (c) 2005-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -22,16 +22,15 @@
  * DEALINGS IN THE SOFTWARE.
  *****************************************************************************/
 
-#import "NSStringAdditions.h"
 #import "NSApplicationAdditions.h"
+#import "NSStringAdditions.h"
 
-#import <transmission.h>
+#import "transmission.h"
 #import "utils.h"
 
 @interface NSString (Private)
 
-+ (NSString *) stringForFileSize: (uint64_t) size showUnitUnless: (NSString *) notAllowedUnit
-    unitsUsed: (NSString **) unitUsed;
++ (NSString *) stringForFileSizeLion: (uint64_t) size showUnitUnless: (NSString *) notAllowedUnit unitsUsed: (NSString **) unitUsed;
 
 + (NSString *) stringForSpeed: (CGFloat) speed kb: (NSString *) kb mb: (NSString *) mb gb: (NSString *) gb;
 
@@ -49,25 +48,66 @@
 	return [self stringByAppendingString: [NSString ellipsis]];
 }
 
+#warning use localizedStringWithFormat: directly when 10.8-only
 + (NSString *) formattedUInteger: (NSUInteger) value
 {
-    NSNumberFormatter * numberFormatter = [[[NSNumberFormatter alloc] init] autorelease];
-    [numberFormatter setNumberStyle: NSNumberFormatterDecimalStyle];
-    [numberFormatter setMaximumFractionDigits: 0];
-    
-    return [numberFormatter stringFromNumber: [NSNumber numberWithUnsignedInteger: value]];
+    if ([NSApp isOnMountainLionOrBetter])
+        return [NSString localizedStringWithFormat: @"%lu", value];
+    else
+    {
+        static NSNumberFormatter * numberFormatter;
+        static dispatch_once_t onceToken;
+        dispatch_once(&onceToken, ^{
+            numberFormatter = [[NSNumberFormatter alloc] init];
+            [numberFormatter setNumberStyle: NSNumberFormatterDecimalStyle];
+            [numberFormatter setMaximumFractionDigits: 0];
+        });
+        
+        return [numberFormatter stringFromNumber: [NSNumber numberWithUnsignedInteger: value]];
+    }
 }
 
+#warning should we take long long instead?
 + (NSString *) stringForFileSize: (uint64_t) size
 {
-    return [self stringForFileSize: size showUnitUnless: nil unitsUsed: nil];
+    if ([NSApp isOnMountainLionOrBetter])
+        return [NSByteCountFormatterMtLion stringFromByteCount: size countStyle: NSByteCountFormatterCountStyleFile];
+    else
+        return [self stringForFileSizeLion: size showUnitUnless: nil unitsUsed: nil];
 }
 
+#warning should we take long long instead?
 + (NSString *) stringForFilePartialSize: (uint64_t) partialSize fullSize: (uint64_t) fullSize
 {
-    NSString * units;
-    NSString * fullString = [self stringForFileSize: fullSize showUnitUnless: nil unitsUsed: &units];
-    NSString * partialString = [self stringForFileSize: partialSize showUnitUnless: units unitsUsed: nil];
+    NSString * partialString, * fullString;
+    if ([NSApp isOnMountainLionOrBetter])
+    {
+        NSByteCountFormatter * fileSizeFormatter = [[NSByteCountFormatterMtLion alloc] init];
+        
+        fullString = [fileSizeFormatter stringFromByteCount: fullSize];
+        
+        //figure out the magniture of the two, since we can't rely on comparing the units because of localization and pluralization issues (for example, "1 byte of 2 bytes")
+        BOOL partialUnitsSame;
+        if (partialSize == 0)
+            partialUnitsSame = YES; //we want to just show "0" when we have no partial data, so always set to the same units
+        else
+        {
+            const unsigned int magnitudePartial = log(partialSize)/log(1000);
+            const unsigned int magnitudeFull = fullSize < 1000 ? 0 : log(fullSize)/log(1000); //we have to catch 0 with a special case, so might as well avoid the math for all of magnitude 0
+            partialUnitsSame = magnitudePartial == magnitudeFull;
+        }
+        
+        [fileSizeFormatter setIncludesUnit: !partialUnitsSame];
+        partialString = [fileSizeFormatter stringFromByteCount: partialSize];
+        
+        [fileSizeFormatter release];
+    }
+    else
+    {
+        NSString * units;
+        fullString = [self stringForFileSizeLion: fullSize showUnitUnless: nil unitsUsed: &units];
+        partialString = [self stringForFileSizeLion: partialSize showUnitUnless: units unitsUsed: nil];
+    }
     
     return [NSString stringWithFormat: NSLocalizedString(@"%@ of %@", "file size string"), partialString, fullString];
 }
@@ -106,7 +146,7 @@
 + (NSString *) percentString: (CGFloat) progress longDecimals: (BOOL) longDecimals
 {
     if (progress >= 1.0)
-        return @"100%";
+        return [NSString localizedStringWithFormat: @"%d%%", 100];
     else if (longDecimals)
         return [NSString localizedStringWithFormat: @"%.2f%%", tr_truncd(progress * 100.0, 2)];
     else
@@ -120,7 +160,7 @@
 
 + (NSString *) timeString: (uint64_t) seconds showSeconds: (BOOL) showSeconds maxFields: (NSUInteger) max
 {
-    NSAssert(max > 0, @"Cannot generate a time string with no fields");
+    NSParameterAssert(max > 0);
     
     NSMutableArray * timeArray = [NSMutableArray arrayWithCapacity: MIN(max, 5)];
     NSUInteger remaining = seconds; //causes problems for some users when it's a uint64_t
@@ -163,19 +203,6 @@
     return [timeArray componentsJoinedByString: @" "];
 }
 
-//also used in InfoWindow.xib and MessageWindow.xib
-- (NSComparisonResult) compareFinder: (NSString *) string
-{
-    if ([NSApp isOnSnowLeopardOrBetter])
-        return [self localizedStandardCompare: string];
-    else
-    {
-        const NSStringCompareOptions comparisonOptions = NSCaseInsensitiveSearch | NSNumericSearch | NSWidthInsensitiveSearch
-                                                            | NSForcedOrderingSearch;
-        return [self compare: string options: comparisonOptions range: NSMakeRange(0, [self length]) locale: [NSLocale currentLocale]];
-    }
-}
-
 - (NSComparisonResult) compareNumeric: (NSString *) string
 {
     const NSStringCompareOptions comparisonOptions = NSNumericSearch | NSForcedOrderingSearch;
@@ -214,38 +241,34 @@
 
 @implementation NSString (Private)
 
-+ (NSString *) stringForFileSize: (uint64_t) size showUnitUnless: (NSString *) notAllowedUnit
-    unitsUsed: (NSString **) unitUsed
++ (NSString *) stringForFileSizeLion: (uint64_t) size showUnitUnless: (NSString *) notAllowedUnit unitsUsed: (NSString **) unitUsed
 {
-    const float baseFloat = [NSApp isOnSnowLeopardOrBetter] ? 1000.0 : 1024.0;
-    const NSUInteger baseInt = [NSApp isOnSnowLeopardOrBetter] ? 1000 : 1024;
-    
     double convertedSize;
     NSString * unit;
     NSUInteger decimals;
-    if (size < pow(baseInt, 2))
+    if (size < pow(1000, 2))
     {
-        convertedSize = size / baseFloat;
+        convertedSize = size / 1000.0;
         unit = NSLocalizedString(@"KB", "File size - kilobytes");
         decimals = convertedSize >= 10.0 ? 0 : 1;
     }
-    else if (size < pow(baseInt, 3))
+    else if (size < pow(1000, 3))
     {
-        convertedSize = size / powf(baseFloat, 2);
+        convertedSize = size / powf(1000.0, 2);
         unit = NSLocalizedString(@"MB", "File size - megabytes");
         decimals = 1;
     }
-    else if (size < pow(baseInt, 4))
+    else if (size < pow(1000, 4))
     {
-        convertedSize = size / powf(baseFloat, 3);
+        convertedSize = size / powf(1000.0, 3);
         unit = NSLocalizedString(@"GB", "File size - gigabytes");
         decimals = 2;
     }
     else
     {
-        convertedSize = size / powf(baseFloat, 4);
+        convertedSize = size / powf(1000.0, 4);
         unit = NSLocalizedString(@"TB", "File size - terabytes");
-        decimals = 3; //guessing on this one
+        decimals = 2;
     }
     
     //match Finder's behavior
@@ -268,19 +291,17 @@
 
 + (NSString *) stringForSpeed: (CGFloat) speed kb: (NSString *) kb mb: (NSString *) mb gb: (NSString *) gb
 {
-    const CGFloat baseFloat = [NSApp isOnSnowLeopardOrBetter] ? 1000.0 : 1024.0;
-    
     if (speed <= 999.95) //0.0 KB/s to 999.9 KB/s
         return [NSString localizedStringWithFormat: @"%.1f %@", speed, kb];
     
-    speed /= baseFloat;
+    speed /= 1000.0;
     
     if (speed <= 99.995) //1.00 MB/s to 99.99 MB/s
         return [NSString localizedStringWithFormat: @"%.2f %@", speed, mb];
     else if (speed <= 999.95) //100.0 MB/s to 999.9 MB/s
         return [NSString localizedStringWithFormat: @"%.1f %@", speed, mb];
     else //insane speeds
-        return [NSString localizedStringWithFormat: @"%.2f %@", (speed / baseFloat), gb];
+        return [NSString localizedStringWithFormat: @"%.2f %@", (speed / 1000.0), gb];
 }
 
 @end

@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: InfoWindowController.m 12504 2011-06-19 03:52:54Z livings124 $
+ * $Id: InfoWindowController.m 13434 2012-08-13 00:52:04Z livings124 $
  *
- * Copyright (c) 2006-2011 Transmission authors and contributors
+ * Copyright (c) 2006-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -78,6 +78,8 @@ typedef enum
     //window location and size
     NSPanel * window = (NSPanel *)[self window];
     
+    [window setFloatingPanel: NO];
+    
     const CGFloat windowHeight = NSHeight([window frame]);
     
     [window setFrameAutosaveName: @"InspectorWindow"];
@@ -139,12 +141,12 @@ typedef enum
     if ([fViewController respondsToSelector: @selector(saveViewSize)])
         [fViewController saveViewSize];
     
-    [fGeneralViewController dealloc];
-    [fActivityViewController dealloc];
-    [fTrackersViewController dealloc];
-    [fPeersViewController dealloc];
-    [fFileViewController dealloc];
-    [fOptionsViewController dealloc];
+    [fGeneralViewController release];
+    [fActivityViewController release];
+    [fTrackersViewController release];
+    [fPeersViewController release];
+    [fFileViewController release];
+    [fOptionsViewController release];
     
     [fTorrents release];
     
@@ -179,9 +181,8 @@ typedef enum
 
 - (void) windowWillClose: (NSNotification *) notification
 {
-    if ([NSApp isOnSnowLeopardOrBetter] && fCurrentTabTag == TAB_FILE_TAG
-        && ([QLPreviewPanelSL sharedPreviewPanelExists] && [[QLPreviewPanelSL sharedPreviewPanel] isVisible]))
-        [[QLPreviewPanelSL sharedPreviewPanel] reloadData];
+    if (fCurrentTabTag == TAB_FILE_TAG && ([QLPreviewPanel sharedPreviewPanelExists] && [[QLPreviewPanel sharedPreviewPanel] isVisible]))
+        [[QLPreviewPanel sharedPreviewPanel] reloadData];
 }
 
 - (void) setTab: (id) sender
@@ -276,7 +277,7 @@ typedef enum
             identifier = TAB_OPTIONS_IDENT;
             break;
         default:
-            NSAssert1(NO, @"Unknown info tab selected: %d", fCurrentTabTag);
+            NSAssert1(NO, @"Unknown info tab selected: %ld", fCurrentTabTag);
             return;
     }
     
@@ -296,12 +297,25 @@ typedef enum
     
     NSRect windowRect = [window frame], viewRect = [view frame];
     
-    CGFloat difference = (NSHeight(viewRect) - oldHeight) * [window userSpaceScaleFactor];
+    const CGFloat difference = (NSHeight(viewRect) - oldHeight) * [window userSpaceScaleFactor];
     windowRect.origin.y -= difference;
     windowRect.size.height += difference;
     
     if ([fViewController respondsToSelector: @selector(saveViewSize)]) //a little bit hacky, but avoids requiring an extra method
     {
+        if ([window screen])
+        {
+            const CGFloat screenHeight = NSHeight([[window screen] visibleFrame]);
+            if (NSHeight(windowRect) > screenHeight)
+            {
+                const CGFloat difference = (screenHeight - NSHeight(windowRect)) * [window userSpaceScaleFactor];
+                windowRect.origin.y -= difference;
+                windowRect.size.height += difference;
+                
+                viewRect.size.height += difference;
+            }
+        }
+        
         [window setMinSize: NSMakeSize([window minSize].width, NSHeight(windowRect) - NSHeight(viewRect) + TAB_MIN_HEIGHT)];
         [window setMaxSize: NSMakeSize(FLT_MAX, FLT_MAX)];
     }
@@ -317,9 +331,9 @@ typedef enum
     [window setFrame: windowRect display: YES animate: oldTabTag != INVALID];
     [[window contentView] addSubview: view];
     
-    if ([NSApp isOnSnowLeopardOrBetter] && (fCurrentTabTag == TAB_FILE_TAG || oldTabTag == TAB_FILE_TAG)
-        && ([QLPreviewPanelSL sharedPreviewPanelExists] && [[QLPreviewPanelSL sharedPreviewPanel] isVisible]))
-        [[QLPreviewPanelSL sharedPreviewPanel] reloadData];
+    if ((fCurrentTabTag == TAB_FILE_TAG || oldTabTag == TAB_FILE_TAG)
+        && ([QLPreviewPanel sharedPreviewPanelExists] && [[QLPreviewPanel sharedPreviewPanel] isVisible]))
+        [[QLPreviewPanel sharedPreviewPanel] reloadData];
 }
 
 - (void) setNextTab
@@ -367,14 +381,13 @@ typedef enum
 
 - (BOOL) canQuickLook
 {
-    if (fCurrentTabTag != TAB_FILE_TAG || ![[self window] isVisible] || ![NSApp isOnSnowLeopardOrBetter])
+    if (fCurrentTabTag != TAB_FILE_TAG || ![[self window] isVisible])
         return NO;
     
     return [fFileViewController canQuickLook];
 }
 
-#warning uncomment (in header too)
-- (NSRect) quickLookSourceFrameForPreviewItem: (id /*<QLPreviewItem>*/) item
+- (NSRect) quickLookSourceFrameForPreviewItem: (id <QLPreviewItem>) item
 {
     return [fFileViewController quickLookSourceFrameForPreviewItem: item];
 }
@@ -436,8 +449,18 @@ typedef enum
                 [fBasicInfoField setStringValue: [NSString stringWithFormat: @"%@, %@", fileString,
                     [NSString stringWithFormat: NSLocalizedString(@"%@ total", "Inspector -> selected torrents"),
                         [NSString stringForFileSize: size]]]];
-                [fBasicInfoField setToolTip: [NSString stringWithFormat: NSLocalizedString(@"%@ bytes",
-                                                "Inspector -> selected torrents"), [NSString formattedUInteger: size]]];
+                
+                NSString * byteString;
+                if ([NSApp isOnMountainLionOrBetter])
+                {
+                    NSByteCountFormatter * formatter = [[NSByteCountFormatterMtLion alloc] init];
+                    [formatter setAllowedUnits: NSByteCountFormatterUseBytes];
+                    byteString = [formatter stringFromByteCount: size];
+                    [formatter release];
+                }
+                else
+                    byteString = [NSString stringWithFormat: NSLocalizedString(@"%@ bytes", "Inspector -> selected torrents"), [NSString formattedUInteger: size]];
+                [fBasicInfoField setToolTip: byteString];
             }
             else
             {
@@ -450,8 +473,7 @@ typedef enum
         }
         else
         {
-            #warning change to NSImageNameApplicationIcon
-            [fImageView setImage: [NSImage imageNamed: @"NSApplicationIcon"]];
+            [fImageView setImage: [NSImage imageNamed: NSImageNameApplicationIcon]];
             [fNoneSelectedField setHidden: NO];
             
             [fNameField setHidden: YES];
@@ -464,15 +486,7 @@ typedef enum
     {
         Torrent * torrent = [fTorrents objectAtIndex: 0];
         
-        if ([NSApp isOnSnowLeopardOrBetter])
-            [fImageView setImage: [torrent icon]];
-        else
-        {
-            NSImage * icon = [[torrent icon] copy];
-            [icon setFlipped: NO];
-            [fImageView setImage: icon];
-            [icon release];
-        }
+        [fImageView setImage: [torrent icon]];
         
         NSString * name = [torrent name];
         [fNameField setStringValue: name];
@@ -494,8 +508,18 @@ typedef enum
                 basicString = [NSString stringWithFormat: @"%@, %@", fileString, basicString];
             }
             [fBasicInfoField setStringValue: basicString];
-            [fBasicInfoField setToolTip: [NSString stringWithFormat: NSLocalizedString(@"%@ bytes", "Inspector -> selected torrents"),
-                                            [NSString formattedUInteger: [torrent size]]]];
+            
+            NSString * byteString;
+            if ([NSApp isOnMountainLionOrBetter])
+            {
+                NSByteCountFormatter * formatter = [[NSByteCountFormatterMtLion alloc] init];
+                [formatter setAllowedUnits: NSByteCountFormatterUseBytes];
+                byteString = [formatter stringFromByteCount: [torrent size]];
+                [formatter release];
+            }
+            else
+                byteString = [NSString stringWithFormat: NSLocalizedString(@"%@ bytes", "Inspector -> selected torrents"), [NSString formattedUInteger: [torrent size]]];
+            [fBasicInfoField setToolTip: byteString];
         }
         else
         {

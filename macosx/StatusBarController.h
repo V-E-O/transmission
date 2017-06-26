@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: StatusBarController.h 12685 2011-08-15 00:17:18Z livings124 $
+ * $Id: StatusBarController.h 13343 2012-06-10 13:47:32Z livings124 $
  * 
- * Copyright (c) 2011 Transmission authors and contributors
+ * Copyright (c) 2011-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -30,7 +30,7 @@
 {
     IBOutlet NSButton * fStatusButton;
     IBOutlet NSTextField * fTotalDLField, * fTotalULField;
-    IBOutlet NSImageView * fTotalDLImageView;
+    IBOutlet NSImageView * fTotalDLImageView, * fTotalULImageView;
     
     tr_session * fLib;
     

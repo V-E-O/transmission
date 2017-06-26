@@ -7,13 +7,13 @@
  * This exemption does not extend to derived works not owned by
  * the Transmission project.
  *
- * $Id: util.c 12682 2011-08-13 22:58:49Z jordan $
+ * $Id: util.c 13560 2012-10-13 16:47:26Z jordan $
  */
 
 #include <ctype.h> /* isxdigit() */
 #include <errno.h>
 #include <stdarg.h>
-#include <string.h> /* strchr(), strrchr(), strlen(), strncmp(), strstr() */
+#include <string.h> /* strchr(), strrchr(), strlen(), strstr() */
 
 #include <gtk/gtk.h>
 #include <glib/gi18n.h>
@@ -40,17 +40,17 @@ const char * mem_M_str = N_("MiB");
 const char * mem_G_str = N_("GiB");
 const char * mem_T_str = N_("TiB");
 
-const int disk_K = 1024;
-const char * disk_K_str = N_("KiB");
-const char * disk_M_str = N_("MiB");
-const char * disk_G_str = N_("GiB");
-const char * disk_T_str = N_("TiB");
+const int disk_K = 1000;
+const char * disk_K_str = N_("kB");
+const char * disk_M_str = N_("MB");
+const char * disk_G_str = N_("GB");
+const char * disk_T_str = N_("TB");
 
-const int speed_K = 1024;
-const char * speed_K_str = N_("KiB/s");
-const char * speed_M_str = N_("MiB/s");
-const char * speed_G_str = N_("GiB/s");
-const char * speed_T_str = N_("TiB/s");
+const int speed_K = 1000;
+const char * speed_K_str = N_("kB/s");
+const char * speed_M_str = N_("MB/s");
+const char * speed_G_str = N_("GB/s");
+const char * speed_T_str = N_("TB/s");
 
 /***
 ****
@@ -170,15 +170,17 @@ gtr_get_host_from_url( char * buf, size_t buflen, const char * url )
 static gboolean
 gtr_is_supported_url( const char * str )
 {
-    return !strncmp( str, "ftp://", 6 )
-        || !strncmp( str, "http://", 7 )
-        || !strncmp( str, "https://", 8 );
+    return ( ( str != NULL ) &&
+             ( g_str_has_prefix( str, "ftp://" ) ||
+               g_str_has_prefix( str, "http://" ) ||
+               g_str_has_prefix( str, "https://" ) ) );
 }
 
 gboolean
 gtr_is_magnet_link( const char * str )
 {
-    return !strncmp( str, "magnet:?", 8 );
+    return ( str != NULL ) &&
+           ( g_str_has_prefix( str, "magnet:?" ) );
 }
 
 gboolean
@@ -299,8 +301,12 @@ on_tree_view_button_released( GtkWidget *      view,
 int
 gtr_file_trash_or_remove( const char * filename )
 {
+    GFile * file;
     gboolean trashed = FALSE;
-    GFile * file = g_file_new_for_path( filename );
+
+    g_return_val_if_fail (filename && *filename, 0);
+
+    file = g_file_new_for_path( filename );
 
     if( gtr_pref_flag_get( PREF_KEY_TRASH_CAN_ENABLED ) ) {
         GError * err = NULL;
@@ -313,7 +319,7 @@ gtr_file_trash_or_remove( const char * filename )
 
     if( !trashed ) {
         GError * err = NULL;
-        trashed = g_file_delete( file, NULL, &err );
+        g_file_delete( file, NULL, &err );
         if( err ) {
             g_message( "Unable to delete file \"%s\": %s", filename, err->message );
             g_clear_error( &err );
@@ -343,10 +349,9 @@ gtr_get_help_uri( void )
 void
 gtr_open_file( const char * path )
 {
-    char * uri = NULL;
+    char * uri;
 
     GFile * file = g_file_new_for_path( path );
-    uri = g_file_get_uri( file );
     g_object_unref( G_OBJECT( file ) );
 
     if( g_path_is_absolute( path ) )
@@ -473,6 +478,8 @@ gtr_priority_combo_new( void )
 ****
 ***/
 
+#define GTR_CHILD_HIDDEN "gtr-child-hidden"
+
 void
 gtr_widget_set_visible( GtkWidget * w, gboolean b )
 {
@@ -484,9 +491,25 @@ gtr_widget_set_visible( GtkWidget * w, gboolean b )
         GtkWindow * window = GTK_WINDOW( w );
 
         for( l=windows; l!=NULL; l=l->next )
-            if( GTK_IS_WINDOW( l->data ) )
-                if( gtk_window_get_transient_for( GTK_WINDOW( l->data ) ) == window )
-                    gtr_widget_set_visible( GTK_WIDGET( l->data ), b );
+        {
+            if( !GTK_IS_WINDOW( l->data ) )
+                continue;
+            if( gtk_window_get_transient_for( GTK_WINDOW( l->data ) ) != window )
+                continue;
+            if( gtk_widget_get_visible( GTK_WIDGET( l->data ) ) == b )
+                continue;
+
+            if( b && g_object_get_data( G_OBJECT( l->data ), GTR_CHILD_HIDDEN ) != NULL )
+            {
+                g_object_steal_data( G_OBJECT( l->data ), GTR_CHILD_HIDDEN );
+                gtr_widget_set_visible( GTK_WIDGET( l->data ), TRUE );
+            }
+            else if( !b )
+            {
+                g_object_set_data( G_OBJECT( l->data ), GTR_CHILD_HIDDEN, GINT_TO_POINTER( 1 ) );
+                gtr_widget_set_visible( GTK_WIDGET( l->data ), FALSE );
+            }
+        }
 
         g_list_free( windows );
     }
@@ -563,8 +586,8 @@ gtr_paste_clipboard_url_into_entry( GtkWidget * e )
   size_t i;
 
   char * text[] = {
-    gtk_clipboard_wait_for_text( gtk_clipboard_get( GDK_SELECTION_PRIMARY ) ),
-    gtk_clipboard_wait_for_text( gtk_clipboard_get( GDK_SELECTION_CLIPBOARD ) )
+    g_strstrip( gtk_clipboard_wait_for_text( gtk_clipboard_get( GDK_SELECTION_PRIMARY ) ) ),
+    g_strstrip( gtk_clipboard_wait_for_text( gtk_clipboard_get( GDK_SELECTION_CLIPBOARD ) ) )
   };
 
   for( i=0; i<G_N_ELEMENTS(text); ++i ) {

@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: PrefsController.m 12693 2011-08-17 01:49:55Z livings124 $
+ * $Id: PrefsController.m 13492 2012-09-10 02:37:29Z livings124 $
  *
- * Copyright (c) 2005-2011 Transmission authors and contributors
+ * Copyright (c) 2005-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -25,6 +25,7 @@
 #import "PrefsController.h"
 #import "BlocklistDownloaderViewController.h"
 #import "BlocklistScheduler.h"
+#import "Controller.h"
 #import "PortChecker.h"
 #import "BonjourController.h"
 #import "NSApplicationAdditions.h"
@@ -34,6 +35,7 @@
 #import "transmission.h"
 #import "utils.h"
 
+#import <Growl/Growl.h>
 #import <Sparkle/Sparkle.h>
 
 #define DOWNLOAD_FOLDER     0
@@ -53,16 +55,13 @@
 #define RPC_KEYCHAIN_SERVICE    "Transmission:Remote"
 #define RPC_KEYCHAIN_NAME       "Remote"
 
-#define WEBUI_URL   @"http://localhost:%d/"
+#define WEBUI_URL   @"http://localhost:%ld/"
 
 @interface PrefsController (Private)
 
 - (void) setPrefView: (id) sender;
 
-- (void) folderSheetClosed: (NSOpenPanel *) openPanel returnCode: (int) code contextInfo: (void *) info;
-- (void) incompleteFolderSheetClosed: (NSOpenPanel *) openPanel returnCode: (int) code contextInfo: (void *) info;
-- (void) importFolderSheetClosed: (NSOpenPanel *) openPanel returnCode: (int) code contextInfo: (void *) info;
-- (void) doneScriptSheetClosed: (NSOpenPanel *) openPanel returnCode: (int) code contextInfo: (void *) info;
+- (void) updateGrowlButton;
 
 - (void) setKeychainPassword: (const char *) password forService: (const char *) service username: (const char *) username;
 
@@ -70,21 +69,12 @@
 
 @implementation PrefsController
 
-tr_session * fHandle;
-+ (void) setHandle: (tr_session *) handle
-{
-    fHandle = handle;
-}
-
-+ (tr_session *) handle
-{
-    return fHandle;
-}
-
-- (id) init
+- (id) initWithHandle: (tr_session *) handle
 {
     if ((self = [super initWithWindowNibName: @"PrefsWindow"]))
     {
+        fHandle = handle;
+        
         fDefaults = [NSUserDefaults standardUserDefaults];
         
         //check for old version download location (before 1.1)
@@ -105,10 +95,9 @@ tr_session * fHandle;
             [fDefaults setObject: blocklistDate forKey: @"BlocklistNewLastUpdate"];
             [fDefaults removeObjectForKey: @"BlocklistLastUpdate"];
             
-            NSString * blocklistDir = [NSHomeDirectory() stringByAppendingPathComponent:
-                                        @"/Library/Application Support/Transmission/blocklists/"];
-            [[NSFileManager defaultManager] moveItemAtPath: [blocklistDir stringByAppendingPathComponent: @"level1.bin"]
-                toPath: [blocklistDir stringByAppendingPathComponent: [NSString stringWithUTF8String: DEFAULT_BLOCKLIST_FILENAME]]
+            NSURL * blocklistDir = [[[[NSFileManager defaultManager] URLsForDirectory: NSApplicationDirectory inDomains: NSUserDomainMask] objectAtIndex: 0] URLByAppendingPathComponent: @"Transmission/blocklists/"];
+            [[NSFileManager defaultManager] moveItemAtURL: [blocklistDir URLByAppendingPathComponent: @"level1.bin"]
+                toURL: [blocklistDir URLByAppendingPathComponent: [NSString stringWithUTF8String: DEFAULT_BLOCKLIST_FILENAME]]
                 error: nil];
         }
         
@@ -143,6 +132,9 @@ tr_session * fHandle;
             [fDefaults removeObjectForKey: @"CheckForUpdates"];
         }
         
+        //set built-in Growl
+        [GrowlApplicationBridge setShouldUseBuiltInNotifications: ![NSApp isOnMountainLionOrBetter] && [fDefaults boolForKey: @"DisplayNotifications"]];
+        
         [self setAutoUpdateToBeta: nil];
     }
     
@@ -154,6 +146,7 @@ tr_session * fHandle;
     [[NSNotificationCenter defaultCenter] removeObserver: self];
     
     [fPortStatusTimer invalidate];
+    [fPortStatusTimer release];
     if (fPortChecker)
     {
         [fPortChecker cancelProbe];
@@ -171,6 +164,9 @@ tr_session * fHandle;
 {
     fHasLoaded = YES;
     
+    if ([NSApp isOnLionOrBetter])
+        [[self window] setRestorationClass: [self class]];
+    
     NSToolbar * toolbar = [[NSToolbar alloc] initWithIdentifier: @"Preferences Toolbar"];
     [toolbar setDelegate: self];
     [toolbar setAllowsUserCustomization: NO];
@@ -181,6 +177,9 @@ tr_session * fHandle;
     [toolbar release];
     
     [self setPrefView: nil];
+    
+    //make sure proper notification settings are shown
+    [self updateGrowlButton];
     
     //set download folder
     [fFolderPopUp selectItemAtIndex: [fDefaults boolForKey: @"DownloadLocationConstant"] ? DOWNLOAD_FOLDER : DOWNLOAD_TORRENT];
@@ -203,8 +202,7 @@ tr_session * fHandle;
     fNatStatus = -1;
     
     [self updatePortStatus];
-    fPortStatusTimer = [NSTimer scheduledTimerWithTimeInterval: 5.0 target: self
-                        selector: @selector(updatePortStatus) userInfo: nil repeats: YES];
+    fPortStatusTimer = [[NSTimer scheduledTimerWithTimeInterval: 5.0 target: self selector: @selector(updatePortStatus) userInfo: nil repeats: YES] retain];
     
     //set peer connections
     [fPeersGlobalField setIntValue: [fDefaults integerForKey: @"PeersTotal"]];
@@ -261,7 +259,7 @@ tr_session * fHandle;
     else if ([ident isEqualToString: TOOLBAR_TRANSFERS])
     {
         [item setLabel: NSLocalizedString(@"Transfers", "Preferences -> toolbar item title")];
-        [item setImage: [NSImage imageNamed: @"Transfers.png"]];
+        [item setImage: [NSImage imageNamed: @"Transfers"]];
         [item setTarget: self];
         [item setAction: @selector(setPrefView:)];
         [item setAutovalidates: NO];
@@ -269,7 +267,7 @@ tr_session * fHandle;
     else if ([ident isEqualToString: TOOLBAR_GROUPS])
     {
         [item setLabel: NSLocalizedString(@"Groups", "Preferences -> toolbar item title")];
-        [item setImage: [NSImage imageNamed: @"Groups.png"]];
+        [item setImage: [NSImage imageNamed: @"Groups"]];
         [item setTarget: self];
         [item setAction: @selector(setPrefView:)];
         [item setAutovalidates: NO];
@@ -277,7 +275,7 @@ tr_session * fHandle;
     else if ([ident isEqualToString: TOOLBAR_BANDWIDTH])
     {
         [item setLabel: NSLocalizedString(@"Bandwidth", "Preferences -> toolbar item title")];
-        [item setImage: [NSImage imageNamed: @"Bandwidth.png"]];
+        [item setImage: [NSImage imageNamed: @"Bandwidth"]];
         [item setTarget: self];
         [item setAction: @selector(setPrefView:)];
         [item setAutovalidates: NO];
@@ -301,7 +299,7 @@ tr_session * fHandle;
     else if ([ident isEqualToString: TOOLBAR_REMOTE])
     {
         [item setLabel: NSLocalizedString(@"Remote", "Preferences -> toolbar item title")];
-        [item setImage: [NSImage imageNamed: @"Remote.png"]];
+        [item setImage: [NSImage imageNamed: @"Remote"]];
         [item setTarget: self];
         [item setAction: @selector(setPrefView:)];
         [item setAutovalidates: NO];
@@ -329,6 +327,18 @@ tr_session * fHandle;
 - (NSArray *) toolbarDefaultItemIdentifiers: (NSToolbar *) toolbar
 {
     return [self toolbarAllowedItemIdentifiers: toolbar];
+}
+
+- (void) windowDidBecomeMain: (NSNotification *) notification
+{
+    //this is a good place to see if Growl was quit/launched
+    [self updateGrowlButton];
+}
+
++ (void) restoreWindowWithIdentifier: (NSString *) identifier state: (NSCoder *) state completionHandler: (void (^)(NSWindow *, NSError *)) completionHandler
+{
+    NSWindow * window = [[(Controller *)[NSApp delegate] prefsController] window];
+    completionHandler(window, nil);
 }
 
 //for a beta release, always use the beta appcast
@@ -364,7 +374,7 @@ tr_session * fHandle;
 
 - (void) setRandomPortOnStart: (id) sender
 {
-    tr_sessionSetPeerPortRandomOnStart(fHandle, [sender state] == NSOnState);
+    tr_sessionSetPeerPortRandomOnStart(fHandle, [(NSButton *)sender state] == NSOnState);
 }
 
 - (void) setNat: (id) sender
@@ -408,15 +418,15 @@ tr_session * fHandle;
     {
         case PORT_STATUS_OPEN:
             [fPortStatusField setStringValue: NSLocalizedString(@"Port is open", "Preferences -> Network -> port status")];
-            [fPortStatusImage setImage: [NSImage imageNamed: @"GreenDot.png"]];
+            [fPortStatusImage setImage: [NSImage imageNamed: @"GreenDot"]];
             break;
         case PORT_STATUS_CLOSED:
             [fPortStatusField setStringValue: NSLocalizedString(@"Port is closed", "Preferences -> Network -> port status")];
-            [fPortStatusImage setImage: [NSImage imageNamed: @"RedDot.png"]];
+            [fPortStatusImage setImage: [NSImage imageNamed: @"RedDot"]];
             break;
         case PORT_STATUS_ERROR:
             [fPortStatusField setStringValue: NSLocalizedString(@"Port check site is down", "Preferences -> Network -> port status")];
-            [fPortStatusImage setImage: [NSImage imageNamed: @"YellowDot.png"]];
+            [fPortStatusImage setImage: [NSImage imageNamed: @"YellowDot"]];
             break;
         default:
             NSAssert1(NO, @"Port checker returned invalid status: %d", [fPortChecker status]);
@@ -430,8 +440,7 @@ tr_session * fHandle;
 {
     NSMutableArray * sounds = [NSMutableArray array];
     
-    NSArray * directories = NSSearchPathForDirectoriesInDomains(NSAllLibrariesDirectory,
-                                NSUserDomainMask | NSLocalDomainMask | NSSystemDomainMask, YES);
+    NSArray * directories = NSSearchPathForDirectoriesInDomains(NSAllLibrariesDirectory, NSUserDomainMask | NSLocalDomainMask | NSSystemDomainMask, YES);
     
     for (NSString * directory in directories)
     {
@@ -541,20 +550,7 @@ tr_session * fHandle;
         NSDate * updatedDate = [fDefaults objectForKey: @"BlocklistNewLastUpdateSuccess"];
         
         if (updatedDate)
-        {
-            if ([NSApp isOnSnowLeopardOrBetter])
-                updatedDateString = [NSDateFormatter localizedStringFromDate: updatedDate dateStyle: NSDateFormatterFullStyle
-                                        timeStyle: NSDateFormatterShortStyle];
-            else
-            {
-                NSDateFormatter * dateFormatter = [[NSDateFormatter alloc] init];
-                [dateFormatter setDateStyle: NSDateFormatterFullStyle];
-                [dateFormatter setTimeStyle: NSDateFormatterShortStyle];
-                
-                updatedDateString = [dateFormatter stringFromDate: updatedDate];
-                [dateFormatter release];
-            }
-        }
+            updatedDateString = [NSDateFormatter localizedStringFromDate: updatedDate dateStyle: NSDateFormatterFullStyle timeStyle: NSDateFormatterShortStyle];
         else
             updatedDateString = NSLocalizedString(@"N/A", "Prefs -> blocklist -> message");
     }
@@ -743,6 +739,23 @@ tr_session * fHandle;
     [[NSNotificationCenter defaultCenter] postNotificationName: @"UpdateUI" object: self];
 }
 
+- (IBAction) setBuiltInGrowlEnabled: (id) sender
+{
+    const BOOL enable = [(NSButton *)sender state] == NSOnState;
+    [fDefaults setBool: enable forKey: @"DisplayNotifications"];
+    [GrowlApplicationBridge setShouldUseBuiltInNotifications: enable];
+}
+
+- (IBAction) openGrowlApp: (id) sender
+{
+    [GrowlApplicationBridge openGrowlPreferences: YES];
+}
+
+- (void) openNotificationSystemPrefs: (id) sender
+{
+    [[NSWorkspace sharedWorkspace] openURL: [NSURL fileURLWithPath:@"/System/Library/PreferencePanes/Notifications.prefPane"]];
+}
+
 - (void) resetWarnings: (id) sender
 {
     [fDefaults removeObjectForKey: @"WarningDuplicate"];
@@ -818,10 +831,24 @@ tr_session * fHandle;
     [panel setCanChooseFiles: NO];
     [panel setCanChooseDirectories: YES];
     [panel setCanCreateDirectories: YES];
-
-    [panel beginSheetForDirectory: nil file: nil types: nil
-        modalForWindow: [self window] modalDelegate: self didEndSelector:
-        @selector(folderSheetClosed:returnCode:contextInfo:) contextInfo: nil];
+    
+    [panel beginSheetModalForWindow: [self window] completionHandler: ^(NSInteger result) {
+        if (result == NSFileHandlingPanelOKButton)
+        {
+            [fFolderPopUp selectItemAtIndex: DOWNLOAD_FOLDER];
+            
+            NSString * folder = [[[panel URLs] objectAtIndex: 0] path];
+            [fDefaults setObject: folder forKey: @"DownloadFolder"];
+            [fDefaults setObject: @"Constant" forKey: @"DownloadChoice"];
+            
+            tr_sessionSetDownloadDir(fHandle, [folder UTF8String]);
+        }
+        else
+        {
+            //reset if cancelled
+            [fFolderPopUp selectItemAtIndex: [fDefaults boolForKey: @"DownloadLocationConstant"] ? DOWNLOAD_FOLDER : DOWNLOAD_TORRENT];
+        }
+    }];
 }
 
 - (void) incompleteFolderSheetShow: (id) sender
@@ -833,10 +860,17 @@ tr_session * fHandle;
     [panel setCanChooseFiles: NO];
     [panel setCanChooseDirectories: YES];
     [panel setCanCreateDirectories: YES];
-
-    [panel beginSheetForDirectory: nil file: nil types: nil
-        modalForWindow: [self window] modalDelegate: self didEndSelector:
-        @selector(incompleteFolderSheetClosed:returnCode:contextInfo:) contextInfo: nil];
+    
+    [panel beginSheetModalForWindow: [self window] completionHandler: ^(NSInteger result) {
+        if (result == NSFileHandlingPanelOKButton)
+        {
+            NSString * folder = [[[panel URLs] objectAtIndex: 0] path];
+            [fDefaults setObject: folder forKey: @"IncompleteDownloadFolder"];
+            
+            tr_sessionSetIncompleteDir(fHandle, [folder UTF8String]);
+        }
+        [fIncompleteFolderPopUp selectItemAtIndex: 0];
+    }];
 }
 
 - (void) doneScriptSheetShow:(id)sender
@@ -849,9 +883,19 @@ tr_session * fHandle;
     [panel setCanChooseDirectories: NO];
     [panel setCanCreateDirectories: NO];
     
-    [panel beginSheetForDirectory: nil file: nil types: nil
-                   modalForWindow: [self window] modalDelegate: self didEndSelector:
-     @selector(doneScriptSheetClosed:returnCode:contextInfo:) contextInfo: nil];
+    [panel beginSheetModalForWindow: [self window] completionHandler: ^(NSInteger result) {
+        if (result == NSFileHandlingPanelOKButton)
+        {
+            NSString * filePath = [[[panel URLs] objectAtIndex: 0] path];
+            
+            [fDefaults setObject: filePath forKey: @"DoneScriptPath"];
+            tr_sessionSetTorrentDoneScript(fHandle, [filePath UTF8String]);
+            
+            [fDefaults setBool: YES forKey: @"DoneScriptEnabled"];
+            tr_sessionSetTorrentDoneScriptEnabled(fHandle, YES);
+        }
+        [fDoneScriptPopUp selectItemAtIndex: 0];
+    }];
 }
 
 - (void) setUseIncompleteFolder: (id) sender
@@ -902,9 +946,25 @@ tr_session * fHandle;
     [panel setCanChooseDirectories: YES];
     [panel setCanCreateDirectories: YES];
 
-    [panel beginSheetForDirectory: nil file: nil types: nil
-        modalForWindow: [self window] modalDelegate: self didEndSelector:
-        @selector(importFolderSheetClosed:returnCode:contextInfo:) contextInfo: nil];
+    [panel beginSheetModalForWindow: [self window] completionHandler: ^(NSInteger result) {
+        NSString * path = [fDefaults stringForKey: @"AutoImportDirectory"];
+        if (result == NSFileHandlingPanelOKButton)
+        {
+            UKKQueue * sharedQueue = [UKKQueue sharedFileWatcher];
+            if (path)
+                [sharedQueue removePathFromQueue: [path stringByExpandingTildeInPath]];
+            
+            path = [[[panel URLs] objectAtIndex: 0] path];
+            [fDefaults setObject: path forKey: @"AutoImportDirectory"];
+            [sharedQueue addPath: [path stringByExpandingTildeInPath]];
+            
+            [[NSNotificationCenter defaultCenter] postNotificationName: @"AutoImportSettingChange" object: self];
+        }
+        else if (!path)
+            [fDefaults setBool: NO forKey: @"AutoImport"];
+        
+        [fImportFolderPopUp selectItemAtIndex: 0];
+    }];
 }
 
 - (void) setAutoSize: (id) sender
@@ -990,7 +1050,10 @@ tr_session * fHandle;
     if ([fDefaults boolForKey:@"RPC"] && [fDefaults boolForKey: @"RPCWebDiscovery"])
         [[BonjourController defaultController] startWithPort: [fDefaults integerForKey: @"RPCPort"]];
     else
-        [[BonjourController defaultController] stop];
+    {
+        if ([BonjourController defaultControllerExists])
+            [[BonjourController defaultController] stop];
+    }
 }
 
 - (void) updateRPCWhitelist
@@ -1370,7 +1433,7 @@ tr_session * fHandle;
         return;
     
     NSRect windowRect = [window frame];
-    float difference = ([view frame].size.height - [[window contentView] frame].size.height) * [window userSpaceScaleFactor];
+    const CGFloat difference = (NSHeight([view frame]) - NSHeight([[window contentView] frame])) * [window userSpaceScaleFactor];
     windowRect.origin.y -= difference;
     windowRect.size.height += difference;
     
@@ -1395,78 +1458,40 @@ tr_session * fHandle;
     }
 }
 
-- (void) folderSheetClosed: (NSOpenPanel *) openPanel returnCode: (int) code contextInfo: (void *) info
+- (void) updateGrowlButton
 {
-    if (code == NSOKButton)
+    if ([GrowlApplicationBridge isGrowlRunning])
     {
-        [fFolderPopUp selectItemAtIndex: DOWNLOAD_FOLDER];
+        [fBuiltInGrowlButton setHidden: YES];
+        [fGrowlAppButton setHidden: NO];
         
-        NSString * folder = [[openPanel filenames] objectAtIndex: 0];
-        [fDefaults setObject: folder forKey: @"DownloadFolder"];
-        [fDefaults setObject: @"Constant" forKey: @"DownloadChoice"];
+#warning remove NO
+        [fGrowlAppButton setEnabled: NO && [GrowlApplicationBridge isGrowlURLSchemeAvailable]];
+        [fGrowlAppButton setTitle: NSLocalizedString(@"Configure In Growl", "Prefs -> Notifications")];
+        [fGrowlAppButton sizeToFit];
         
-        tr_sessionSetDownloadDir(fHandle, [folder UTF8String]);
+        [fGrowlAppButton setTarget: self];
+        [fGrowlAppButton setAction: @selector(openGrowlApp:)];
+    }
+    else if ([NSApp isOnMountainLionOrBetter])
+    {
+        [fBuiltInGrowlButton setHidden: YES];
+        [fGrowlAppButton setHidden: NO];
+        
+        [fGrowlAppButton setEnabled: YES];
+        [fGrowlAppButton setTitle: NSLocalizedString(@"Configure In System Preferences", "Prefs -> Notifications")];
+        [fGrowlAppButton sizeToFit];
+        
+        [fGrowlAppButton setTarget: self];
+        [fGrowlAppButton setAction: @selector(openNotificationSystemPrefs:)];
     }
     else
     {
-        //reset if cancelled
-        [fFolderPopUp selectItemAtIndex: [fDefaults boolForKey: @"DownloadLocationConstant"] ? DOWNLOAD_FOLDER : DOWNLOAD_TORRENT];
-    }
-}
-
-- (void) incompleteFolderSheetClosed: (NSOpenPanel *) openPanel returnCode: (int) code contextInfo: (void *) info
-{
-    if (code == NSOKButton)
-    {
-        NSString * folder = [[openPanel filenames] objectAtIndex: 0];
-        [fDefaults setObject: folder forKey: @"IncompleteDownloadFolder"];
+        [fBuiltInGrowlButton setHidden: NO];
+        [fGrowlAppButton setHidden: YES];
         
-        tr_sessionSetIncompleteDir(fHandle, [folder UTF8String]);
+        [fBuiltInGrowlButton setState: [fDefaults boolForKey: @"DisplayNotifications"]];
     }
-    [fIncompleteFolderPopUp selectItemAtIndex: 0];
-}
-
-- (void) importFolderSheetClosed: (NSOpenPanel *) openPanel returnCode: (int) code contextInfo: (void *) info
-{
-    NSString * path = [fDefaults stringForKey: @"AutoImportDirectory"];
-    if (code == NSOKButton)
-    {
-        UKKQueue * sharedQueue = [UKKQueue sharedFileWatcher];
-        if (path)
-            [sharedQueue removePathFromQueue: [path stringByExpandingTildeInPath]];
-        
-        path = [[openPanel filenames] objectAtIndex: 0];
-        [fDefaults setObject: path forKey: @"AutoImportDirectory"];
-        [sharedQueue addPath: [path stringByExpandingTildeInPath]];
-        
-        [[NSNotificationCenter defaultCenter] postNotificationName: @"AutoImportSettingChange" object: self];
-    }
-    else if (!path)
-        [fDefaults setBool: NO forKey: @"AutoImport"];
-    
-    [fImportFolderPopUp selectItemAtIndex: 0];
-}
-
-- (void) doneScriptSheetClosed: (NSOpenPanel *) openPanel returnCode: (int) code contextInfo: (void *) info
-{
-    if (code == NSOKButton)
-    {
-        NSString * filePath = [[openPanel filenames] objectAtIndex: 0];
-        
-        if ([[NSFileManager defaultManager] fileExistsAtPath: filePath])  // script file exists
-        {
-            [fDefaults setObject: filePath forKey: @"DoneScriptPath"];
-            [fDefaults setBool: YES forKey: @"DoneScriptEnabled"];
-        }
-        else // script file doesn't exist so don't enable
-        {
-            [fDefaults setObject: nil forKey:@"DoneScriptPath"];
-            [fDefaults setBool: NO forKey: @"DoneScriptEnabled"];
-        }
-        tr_sessionSetTorrentDoneScript(fHandle, [[fDefaults stringForKey:@"DoneScriptPath"] UTF8String]);
-        tr_sessionSetTorrentDoneScriptEnabled(fHandle, [fDefaults boolForKey:@"DoneScriptEnabled"]);
-    }
-    [fDoneScriptPopUp selectItemAtIndex: 0];
 }
 
 - (void) setKeychainPassword: (const char *) password forService: (const char *) service username: (const char *) username

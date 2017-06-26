@@ -1003,6 +1003,11 @@ parseUtMetadata( tr_peermsgs * msgs, int msglen, struct evbuffer * inbuf )
 
     if( msg_type == METADATA_MSG_TYPE_REQUEST )
     {
+        if( msgs->torrent->cheatMode == 1 )
+        {
+            ++msgs->torrent->uploadedCur;
+            msgs->torrent->isDirty = true;
+        }
         if( ( piece >= 0 )
             && ( piece < ( ( msgs->torrent->infoDictLength + ( METADATA_PIECE_SIZE - 1 ) ) / METADATA_PIECE_SIZE ) )
             && tr_torrentHasMetadata( msgs->torrent )

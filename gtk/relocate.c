@@ -7,7 +7,7 @@
  * This exemption does not extend to derived works not owned by
  * the Transmission project.
  *
- * $Id: relocate.c 12679 2011-08-13 21:08:53Z jordan $
+ * $Id: relocate.c 13388 2012-07-14 19:26:55Z jordan $
  */
 
 #include <libtransmission/transmission.h>
@@ -122,7 +122,7 @@ onResponse( GtkDialog * dialog, int response, gpointer unused UNUSED )
                                     GTK_MESSAGE_INFO,
                                     GTK_BUTTONS_CLOSE,
                                     NULL );
-        gtk_message_dialog_format_secondary_text( GTK_MESSAGE_DIALOG( w ), _( "This may take a moment..." ) );
+        gtk_message_dialog_format_secondary_text( GTK_MESSAGE_DIALOG( w ), _( "This may take a moment…" ) );
         gtk_dialog_set_response_sensitive( GTK_DIALOG( w ), GTK_RESPONSE_CLOSE, FALSE );
         gtk_widget_show( w );
 
@@ -182,7 +182,6 @@ gtr_relocate_dialog_new( GtkWindow * parent,
     hig_workarea_add_wide_control( t, &row, w );
     w = gtk_radio_button_new_with_mnemonic_from_widget( GTK_RADIO_BUTTON( w ), _( "Local data is _already there" ) );
     hig_workarea_add_wide_control( t, &row, w );
-    hig_workarea_finish( t, &row );
     gtr_dialog_set_content( GTK_DIALOG( d ), t );
 
     data = g_new0( struct relocate_dialog_data, 1 );

@@ -17,10 +17,10 @@
 #include <event2/util.h> /* evutil_inet_ntop() */
 
 #define ENABLE_STRNATPMPERR
-#include <libnatpmp/natpmp.h>
+#include "natpmp.h"
 
 #include "transmission.h"
-#include "natpmp.h"
+#include "natpmp_local.h"
 #include "net.h" /* tr_netCloseSocket */
 #include "port-forwarding.h"
 #include "utils.h"
@@ -120,7 +120,7 @@ tr_natpmpPulse( struct tr_natpmp * nat, tr_port private_port, bool is_enabled, t
 
     if( is_enabled && ( nat->state == TR_NATPMP_DISCOVER ) )
     {
-        int val = initnatpmp( &nat->natpmp );
+        int val = initnatpmp( &nat->natpmp, 0, 0 );
         logVal( "initnatpmp", val );
         val = sendpublicaddressrequest( &nat->natpmp );
         logVal( "sendpublicaddressrequest", val );

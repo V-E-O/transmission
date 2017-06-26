@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: FilterBarController.m 12897 2011-09-19 00:48:30Z livings124 $
+ * $Id: FilterBarController.m 13414 2012-07-25 12:49:11Z livings124 $
  * 
- * Copyright (c) 2011 Transmission authors and contributors
+ * Copyright (c) 2011-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -238,6 +238,26 @@
     [[NSNotificationCenter defaultCenter] postNotificationName: @"ApplyFilter" object: nil];
 }
 
+- (void) reset: (BOOL) updateUI
+{
+    [[NSUserDefaults standardUserDefaults] setInteger: GROUP_FILTER_ALL_TAG forKey: @"FilterGroup"];
+    
+    if (updateUI)
+    {   
+        [self updateGroupsButton];
+        
+        [self setFilter: fNoFilterButton];
+        
+        [fSearchField setStringValue: @""];
+        [self setSearchText: fSearchField];
+    }
+    else
+    {
+        [[NSUserDefaults standardUserDefaults] setObject: FILTER_NONE forKey: @"Filter"];
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey: @"FilterSearchString"];
+    }
+}
+
 - (NSArray *) searchStrings
 {
     return [[fSearchField stringValue] betterComponentsSeparatedByCharactersInSet: [NSCharacterSet whitespaceAndNewlineCharacterSet]];
@@ -374,7 +394,7 @@
     NSString * toolTip;
     if (groupIndex == GROUP_FILTER_ALL_TAG)
     {
-        icon = [NSImage imageNamed: @"PinTemplate.png"];
+        icon = [NSImage imageNamed: @"PinTemplate"];
         toolTip = NSLocalizedString(@"All Groups", "Groups -> Button");
     }
     else
@@ -392,8 +412,6 @@
 - (void) updateGroups: (NSNotification *) notification
 {
     [self updateGroupsButton];
-    
-    [[NSNotificationCenter defaultCenter] postNotificationName: @"ApplyFilter" object: nil];
 }
 
 @end

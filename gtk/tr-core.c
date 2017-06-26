@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: tr-core.c 12680 2011-08-13 22:24:31Z jordan $
+ * $Id: tr-core.c 13520 2012-09-23 15:38:07Z jordan $
  *
  * Copyright (c) Transmission authors and contributors
  *
@@ -984,11 +984,14 @@ core_create_new_torrent( TrCore * core, tr_ctor * ctor )
     {
         const char * config = tr_sessionGetConfigDir( session );
         const char * source = tr_ctorGetSourceFile( ctor );
-        const int is_internal = source && ( strstr( source, config ) == source );
 
-        /* #1294: don't delete the .torrent file if it's our internal copy */
-        if( !is_internal )
-            gtr_file_trash_or_remove( source );
+        if( source != NULL )
+        {
+          /* #1294: don't delete the .torrent file if it's our internal copy */
+          const int is_internal = ( strstr( source, config ) == source );
+          if( !is_internal )
+              gtr_file_trash_or_remove( source );
+        }
     }
 
     return tor;
@@ -1401,9 +1404,10 @@ gtr_inhibit_hibernation( guint * cookie )
                                             NULL, G_DBUS_CALL_FLAGS_NONE,
                                             1000, NULL, &err );
 
-    *cookie = g_variant_get_uint32( g_variant_get_child_value( response, 0 ) );
+    if( response != NULL )
+        *cookie = g_variant_get_uint32( g_variant_get_child_value( response, 0 ) );
 
-    success = err == NULL;
+    success = ( response != NULL ) && ( err == NULL );
 
     /* logging */
     if( success )
@@ -1414,8 +1418,11 @@ gtr_inhibit_hibernation( guint * cookie )
     }
 
     /* cleanup */
-    g_variant_unref( response );
-    g_object_unref( connection );
+    if( response != NULL )
+        g_variant_unref( response );
+    if( connection != NULL )
+        g_object_unref( connection );
+
     return success;
 }
 

@@ -1,5 +1,5 @@
 /******************************************************************************
- * $Id: main.c 12681 2011-08-13 22:37:25Z jordan $
+ * $Id: main.c 13477 2012-09-07 17:18:17Z jordan $
  *
  * Copyright (c) Transmission authors and contributors
  *
@@ -46,6 +46,7 @@
 #include "hig.h"
 #include "makemeta-ui.h"
 #include "msgwin.h"
+#include "notify.h"
 #include "open-dialog.h"
 #include "relocate.h"
 #include "stats.h"
@@ -54,10 +55,11 @@
 #include "tr-prefs.h"
 #include "tr-window.h"
 #include "util.h"
-#include "ui.h"
 
 #define MY_CONFIG_NAME "transmission"
 #define MY_READABLE_NAME "transmission-gtk"
+
+#define TR_RESOURCE_PATH "/com/transmissionbt/transmission/"
 
 #define SHOW_LICENSE
 static const char * LICENSE =
@@ -72,6 +74,7 @@ struct cbdata
     gboolean                    start_paused;
     gboolean                    is_iconified;
 
+    guint                       activation_count;
     guint                       timer;
     guint                       update_model_soon_tag;
     guint                       refresh_actions_tag;
@@ -438,6 +441,7 @@ on_rpc_changed( tr_session            * session,
         case TR_RPC_TORRENT_MOVED:
         case TR_RPC_TORRENT_STARTED:
         case TR_RPC_TORRENT_STOPPED:
+        case TR_RPC_SESSION_QUEUE_POSITIONS_CHANGED:
             /* nothing interesting to do here */
             break;
     }
@@ -473,11 +477,12 @@ signal_handler( int sig )
 *****
 ****/
 
-static void app_setup( TrWindow * wind, struct cbdata  * cbdata );
+static void app_setup( GtkWindow * wind, struct cbdata  * cbdata );
 
 static void
 on_startup( GApplication * application, gpointer user_data )
 {
+    GError * error;
     const char * str;
     GtkWindow * win;
     GtkUIManager * ui_manager;
@@ -485,15 +490,15 @@ on_startup( GApplication * application, gpointer user_data )
     struct cbdata * cbdata = user_data;
 
     signal( SIGINT, signal_handler );
-    signal( SIGKILL, signal_handler );
+    signal( SIGTERM, signal_handler );
 
     sighandler_cbdata = cbdata;
 
     /* ensure the directories are created */
     if(( str = gtr_pref_string_get( TR_PREFS_KEY_DOWNLOAD_DIR )))
-	g_mkdir_with_parents( str, 0777 );
+      g_mkdir_with_parents( str, 0777 );
     if(( str = gtr_pref_string_get( TR_PREFS_KEY_INCOMPLETE_DIR )))
-	g_mkdir_with_parents( str, 0777 );
+      g_mkdir_with_parents( str, 0777 );
 
     /* initialize the libtransmission session */
     session = tr_sessionInit( "gtk", cbdata->config_dir, TRUE, gtr_pref_get_all( ) );
@@ -503,13 +508,15 @@ on_startup( GApplication * application, gpointer user_data )
     cbdata->core = gtr_core_new( session );
 
     /* init the ui manager */
+    error = NULL;
     ui_manager = gtk_ui_manager_new ( );
     gtr_actions_init ( ui_manager, cbdata );
-    gtk_ui_manager_add_ui_from_string ( ui_manager, fallback_ui_file, -1, NULL );
+    gtk_ui_manager_add_ui_from_resource ( ui_manager, TR_RESOURCE_PATH "transmission-ui.xml", &error );
+    g_assert_no_error (error);
     gtk_ui_manager_ensure_update ( ui_manager );
 
     /* create main window now to be a parent to any error dialogs */
-    win = GTK_WINDOW( gtr_window_new( ui_manager, cbdata->core ) );
+    win = GTK_WINDOW( gtr_window_new( GTK_APPLICATION( application ), ui_manager, cbdata->core ) );
     g_signal_connect( win, "size-allocate", G_CALLBACK( on_main_window_size_allocated ), cbdata );
     g_application_hold( application );
     g_object_weak_ref( G_OBJECT( win ), (GWeakNotify)g_application_release, application );
@@ -518,13 +525,13 @@ on_startup( GApplication * application, gpointer user_data )
 
     /* check & see if it's time to update the blocklist */
     if( gtr_pref_flag_get( TR_PREFS_KEY_BLOCKLIST_ENABLED ) ) {
-	if( gtr_pref_flag_get( PREF_KEY_BLOCKLIST_UPDATES_ENABLED ) ) {
-	    const int64_t last_time = gtr_pref_int_get( "blocklist-date" );
-	    const int SECONDS_IN_A_WEEK = 7 * 24 * 60 * 60;
-	    const time_t now = time( NULL );
-	if( last_time + SECONDS_IN_A_WEEK < now )
-	    gtr_core_blocklist_update( cbdata->core );
-        }
+      if( gtr_pref_flag_get( PREF_KEY_BLOCKLIST_UPDATES_ENABLED ) ) {
+        const int64_t last_time = gtr_pref_int_get( "blocklist-date" );
+        const int SECONDS_IN_A_WEEK = 7 * 24 * 60 * 60;
+        const time_t now = time( NULL );
+        if( last_time + SECONDS_IN_A_WEEK < now )
+          gtr_core_blocklist_update( cbdata->core );
+      }
     }
 
     /* if there's no magnet link handler registered, register us */
@@ -532,8 +539,16 @@ on_startup( GApplication * application, gpointer user_data )
 }
 
 static void
-on_activate( GApplication * app UNUSED, gpointer unused UNUSED )
+on_activate( GApplication * app UNUSED, struct cbdata * cbdata )
 {
+    cbdata->activation_count++;
+
+    /* GApplication emits an 'activate' signal when bootstrapping the primary.
+     * Ordinarily we handle that by presenting the main window, but if the user
+     * user started Transmission minimized, ignore that initial signal... */
+    if( cbdata->is_iconified && ( cbdata->activation_count == 1 ) )
+        return;
+
     gtr_action_activate( "present-main-window" );
 }
 
@@ -576,7 +591,7 @@ main( int argc, char ** argv )
     int ret;
     struct stat sb;
     char * application_id;
-    GApplication * app;
+    GtkApplication * app;
     GOptionContext * option_context;
     bool show_version = false;
     GError * error = NULL;
@@ -601,7 +616,6 @@ main( int argc, char ** argv )
     textdomain( MY_READABLE_NAME );
 
     /* init glib/gtk */
-    g_thread_init (NULL);
     g_type_init ();
     gtk_init (&argc, &argv);
     g_set_application_name (_( "Transmission" ));
@@ -634,14 +648,17 @@ main( int argc, char ** argv )
     gtr_pref_init( cbdata.config_dir );
     g_mkdir_with_parents( cbdata.config_dir, 0755 );
 
+    /* init notifications */
+    gtr_notify_init( );
+
     /* init the application for the specified config dir */
     stat( cbdata.config_dir, &sb );
     application_id = g_strdup_printf( "com.transmissionbt.transmission_%lu_%lu", (unsigned long)sb.st_dev, (unsigned long)sb.st_ino );
-    app = g_application_new( application_id, G_APPLICATION_HANDLES_OPEN );
+    app = gtk_application_new( application_id, G_APPLICATION_HANDLES_OPEN );
     g_signal_connect( app, "open", G_CALLBACK(on_open), &cbdata );
     g_signal_connect( app, "startup", G_CALLBACK(on_startup), &cbdata );
     g_signal_connect( app, "activate", G_CALLBACK(on_activate), &cbdata );
-    ret = g_application_run (app, argc, argv);
+    ret = g_application_run( G_APPLICATION( app ), argc, argv);
     g_object_unref( app );
     g_free( application_id );
     return ret;
@@ -656,12 +673,12 @@ on_core_busy( TrCore * core UNUSED, gboolean busy, struct cbdata * c )
 static void on_core_error( TrCore *, guint, const char *, struct cbdata * );
 static void on_add_torrent( TrCore *, tr_ctor *, gpointer );
 static void on_prefs_changed( TrCore * core, const char * key, gpointer );
-static void main_window_setup( struct cbdata * cbdata, TrWindow * wind );
+static void main_window_setup( struct cbdata * cbdata, GtkWindow * wind );
 static gboolean update_model_loop( gpointer gdata );
 static gboolean update_model_once( gpointer gdata );
 
 static void
-app_setup( TrWindow * wind, struct cbdata * cbdata )
+app_setup( GtkWindow * wind, struct cbdata * cbdata )
 {
     if( cbdata->is_iconified )
         gtr_pref_flag_set( PREF_KEY_SHOW_TRAY_ICON, TRUE );
@@ -743,6 +760,7 @@ presentMainWindow( struct cbdata * cbdata )
         gtr_widget_set_visible( GTK_WIDGET( window ), TRUE );
     }
     gtr_window_present( window );
+    gdk_window_raise (gtk_widget_get_window (GTK_WIDGET(window)));
 }
 
 static void
@@ -821,14 +839,14 @@ on_drag_data_received( GtkWidget         * widget          UNUSED,
 }
 
 static void
-main_window_setup( struct cbdata * cbdata, TrWindow * wind )
+main_window_setup( struct cbdata * cbdata, GtkWindow * wind )
 {
     GtkWidget * w;
     GtkTreeModel * model;
     GtkTreeSelection * sel;
 
     g_assert( NULL == cbdata->wind );
-    cbdata->wind = GTK_WINDOW( wind );
+    cbdata->wind = wind;
     cbdata->sel = sel = GTK_TREE_SELECTION( gtr_window_get_selection( cbdata->wind ) );
 
     g_signal_connect( sel, "changed", G_CALLBACK( on_selection_changed ), cbdata );
@@ -909,27 +927,27 @@ on_app_exit( gpointer vdata )
     r = gtk_alignment_new( 0.5, 0.5, 0.01, 0.01 );
     gtk_container_add( GTK_CONTAINER( c ), r );
 
-    p = gtk_table_new( 3, 2, FALSE );
-    gtk_table_set_col_spacings( GTK_TABLE( p ), GUI_PAD_BIG );
+    p = gtk_grid_new( );
+    gtk_grid_set_column_spacing( GTK_GRID( p ), GUI_PAD_BIG );
     gtk_container_add( GTK_CONTAINER( r ), p );
 
     w = gtk_image_new_from_stock( GTK_STOCK_NETWORK, GTK_ICON_SIZE_DIALOG );
-    gtk_table_attach_defaults( GTK_TABLE( p ), w, 0, 1, 0, 2 );
+    gtk_grid_attach( GTK_GRID( p ), w, 0, 0, 1, 2 );
 
     w = gtk_label_new( NULL );
     gtk_label_set_markup( GTK_LABEL( w ), _( "<b>Closing Connections</b>" ) );
     gtk_misc_set_alignment( GTK_MISC( w ), 0.0, 0.5 );
-    gtk_table_attach_defaults( GTK_TABLE( p ), w, 1, 2, 0, 1 );
+    gtk_grid_attach( GTK_GRID( p ), w, 1, 0, 1, 1 );
 
-    w = gtk_label_new( _( "Sending upload/download totals to tracker..." ) );
+    w = gtk_label_new( _( "Sending upload/download totals to tracker…" ) );
     gtk_misc_set_alignment( GTK_MISC( w ), 0.0, 0.5 );
-    gtk_table_attach_defaults( GTK_TABLE( p ), w, 1, 2, 1, 2 );
+    gtk_grid_attach( GTK_GRID( p ), w, 1, 1, 1, 1 );
 
     b = gtk_alignment_new( 0.0, 1.0, 0.01, 0.01 );
     w = gtk_button_new_with_mnemonic( _( "_Quit Now" ) );
     g_signal_connect( w, "clicked", G_CALLBACK( exit_now_cb ), NULL );
     gtk_container_add( GTK_CONTAINER( b ), w );
-    gtk_table_attach( GTK_TABLE( p ), b, 1, 2, 2, 3, GTK_FILL, GTK_FILL, 0, 10 );
+    gtk_grid_attach( GTK_GRID( p ), b, 1, 2, 1, 1 );
 
     gtk_widget_show_all( r );
     gtk_widget_grab_focus( w );
@@ -946,7 +964,7 @@ on_app_exit( gpointer vdata )
                                    gtr_pref_int_get( PREF_KEY_MAIN_WINDOW_Y ) );
 
     /* shut down libT */
-    g_thread_create( session_close_threadfunc, vdata, TRUE, NULL );
+    g_thread_new( "shutdown-thread", session_close_threadfunc, vdata );
 }
 
 static void
@@ -1285,35 +1303,29 @@ update_model_loop( gpointer gdata )
 static void
 show_about_dialog( GtkWindow * parent )
 {
-    GtkWidget * d;
-    const char * website_uri = "http://www.transmissionbt.com/";
-    const char * authors[] = {
-        "Jordan Lee (Backend; GTK+)",
-        "Mitchell Livingston (Backend; OS X)",
-        NULL
-    };
+    const char * uri = "http://www.transmissionbt.com/";
+    const char * authors[] = { "Jordan Lee (Backend; GTK+)",
+                               "Mitchell Livingston (Backend; OS X)",
+                               NULL };
 
-    d = g_object_new( GTK_TYPE_ABOUT_DIALOG,
-                      "authors", authors,
-                      "comments", _( "A fast and easy BitTorrent client" ),
-                      "copyright", _( "Copyright (c) The Transmission Project" ),
-                      "logo-icon-name", MY_CONFIG_NAME,
-                      "name", g_get_application_name( ),
-                      /* Translators: translate "translator-credits" as your name
-                         to have it appear in the credits in the "About"
-                         dialog */
-                      "translator-credits", _( "translator-credits" ),
-                      "version", LONG_VERSION_STRING,
-                      "website", website_uri,
-                      "website-label", website_uri,
+    gtk_show_about_dialog( parent,
+        "authors", authors,
+        "comments", _( "A fast and easy BitTorrent client" ),
+        "copyright", _( "Copyright (c) The Transmission Project" ),
+        "logo-icon-name", MY_CONFIG_NAME,
+        "name", g_get_application_name( ),
+        /* Translators: translate "translator-credits" as your name
+           to have it appear in the credits in the "About"
+           dialog */
+        "translator-credits", _( "translator-credits" ),
+        "version", LONG_VERSION_STRING,
+        "website", uri,
+        "website-label", uri,
 #ifdef SHOW_LICENSE
-                      "license", LICENSE,
-                      "wrap-license", TRUE,
+        "license", LICENSE,
+        "wrap-license", TRUE,
 #endif
-                      NULL );
-    gtk_window_set_transient_for( GTK_WINDOW( d ), parent );
-    g_signal_connect_swapped( d, "response", G_CALLBACK (gtk_widget_destroy), d );
-    gtk_widget_show( d );
+        NULL );
 }
 
 static void

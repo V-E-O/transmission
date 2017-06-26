@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: Badger.m 12505 2011-06-19 03:59:04Z livings124 $
+ * $Id: Badger.m 13571 2012-10-15 02:12:44Z livings124 $
  *
- * Copyright (c) 2006-2011 Transmission authors and contributors
+ * Copyright (c) 2006-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -47,10 +47,7 @@
 
 - (void) dealloc
 {
-    [[NSNotificationCenter defaultCenter] removeObserver: self];
-    
     [fHashes release];
-    
     [super dealloc];
 }
 
@@ -68,6 +65,8 @@
 
 - (void) addCompletedTorrent: (Torrent *) torrent
 {
+    NSParameterAssert(torrent != nil);
+    
     [fHashes addObject: [torrent hashString]];
     [[NSApp dockTile] setBadgeLabel: [NSString formattedUInteger: [fHashes count]]];
 }

@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: MessageWindowController.m 12937 2011-10-03 01:38:55Z livings124 $
+ * $Id: MessageWindowController.m 13492 2012-09-10 02:37:29Z livings124 $
  *
- * Copyright (c) 2006-2011 Transmission authors and contributors
+ * Copyright (c) 2006-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -23,6 +23,7 @@
  *****************************************************************************/
 
 #import "MessageWindowController.h"
+#import "Controller.h"
 #import "NSApplicationAdditions.h"
 #import "NSMutableArrayAdditions.h"
 #import "NSStringAdditions.h"
@@ -57,8 +58,11 @@
     [window setFrameAutosaveName: @"MessageWindowFrame"];
     [window setFrameUsingName: @"MessageWindowFrame"];
     
+    if ([NSApp isOnLionOrBetter])
+        [window setRestorationClass: [self class]];
+    
     [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(resizeColumn)
-        name: @"NSTableViewColumnDidResizeNotification" object: fMessageTable];
+        name: NSTableViewColumnDidResizeNotification object: fMessageTable];
     
     [window setContentBorderThickness: NSMinY([[fMessageTable enclosingScrollView] frame]) forEdge: NSMinYEdge];
     
@@ -135,6 +139,7 @@
     [[NSNotificationCenter defaultCenter] removeObserver: self];
     
     [fTimer invalidate];
+    [fTimer release];
     [fLock release];
     
     [fMessages release];
@@ -149,8 +154,7 @@
 {
     if (!fTimer)
     {
-        fTimer = [NSTimer scheduledTimerWithTimeInterval: UPDATE_SECONDS target: self
-                    selector: @selector(updateLog:) userInfo: nil repeats: YES];
+        fTimer = [[NSTimer scheduledTimerWithTimeInterval: UPDATE_SECONDS target: self selector: @selector(updateLog:) userInfo: nil repeats: YES] retain];
         [self updateLog: nil];
     }
 }
@@ -158,7 +162,24 @@
 - (void) windowWillClose: (id)sender
 {
     [fTimer invalidate];
+    [fTimer release];
     fTimer = nil;
+}
+
++ (void) restoreWindowWithIdentifier: (NSString *) identifier state: (NSCoder *) state completionHandler: (void (^)(NSWindow *, NSError *)) completionHandler
+{
+    NSAssert1([identifier isEqualToString: @"MessageWindow"], @"Trying to restore unexpected identifier %@", identifier);
+    
+    NSWindow * window = [[(Controller *)[NSApp delegate] messageWindowController] window];
+    completionHandler(window, nil);
+}
+
+- (void) window: (NSWindow *) window didDecodeRestorableState: (NSCoder *) coder
+{
+    [fTimer invalidate];
+    [fTimer release];
+    fTimer = [[NSTimer scheduledTimerWithTimeInterval: UPDATE_SECONDS target: self selector: @selector(updateLog:) userInfo: nil repeats: YES] retain];
+    [self updateLog: nil];
 }
 
 - (void) updateLog: (NSTimer *) timer
@@ -250,13 +271,13 @@
         switch (level)
         {
             case TR_MSG_ERR:
-                return [NSImage imageNamed: @"RedDot.png"];
+                return [NSImage imageNamed: @"RedDot"];
             case TR_MSG_INF:
-                return [NSImage imageNamed: @"YellowDot.png"];
+                return [NSImage imageNamed: @"YellowDot"];
             case TR_MSG_DBG:
-                return [NSImage imageNamed: @"PurpleDot.png"];
+                return [NSImage imageNamed: @"PurpleDot"];
             default:
-                NSAssert1(NO, @"Unknown message log level: %d", level);
+                NSAssert1(NO, @"Unknown message log level: %ld", level);
                 return nil;
         }
     }
@@ -273,6 +294,7 @@
     
     NSTableColumn * column = [tableView tableColumnWithIdentifier: @"Message"];
     const CGFloat count = floorf([message sizeWithAttributes: fAttributes].width / [column width]);
+    
     return [tableView rowHeight] * (count + 1.0);
 }
 
@@ -300,16 +322,8 @@
     NSString * messageString = [messageStrings componentsJoinedByString: @"\n"];
     
     NSPasteboard * pb = [NSPasteboard generalPasteboard];
-    if ([NSApp isOnSnowLeopardOrBetter])
-    {
-        [pb clearContents];
-        [pb writeObjects: [NSArray arrayWithObject: messageString]];
-    }
-    else
-    {
-        [pb declareTypes: [NSArray arrayWithObject: NSStringPboardType] owner: nil];
-        [pb setString: messageString forType: NSStringPboardType];
-    }
+    [pb clearContents];
+    [pb writeObjects: [NSArray arrayWithObject: messageString]];
 }
 
 - (BOOL) validateMenuItem: (NSMenuItem *) menuItem
@@ -337,7 +351,7 @@
             level = TR_MSG_DBG;
             break;
         default:
-            NSAssert1(NO, @"Unknown message log level: %d", [fLevelButton indexOfSelectedItem]);
+            NSAssert1(NO, @"Unknown message log level: %ld", [fLevelButton indexOfSelectedItem]);
     }
     
     if ([[NSUserDefaults standardUserDefaults] integerForKey: @"MessageLevel"] == level)
@@ -386,48 +400,43 @@
 
 - (void) writeToFile: (id) sender
 {
-    //make the array sorted by date
-    NSSortDescriptor * descriptor = [[[NSSortDescriptor alloc] initWithKey: @"Index" ascending: YES] autorelease];
-    NSArray * descriptors = [[NSArray alloc] initWithObjects: descriptor, nil];
-    NSArray * sortedMessages = [[fDisplayedMessages sortedArrayUsingDescriptors: descriptors] retain];
-    [descriptors release];
-    
     NSSavePanel * panel = [NSSavePanel savePanel];
     [panel setAllowedFileTypes: [NSArray arrayWithObject: @"txt"]];
     [panel setCanSelectHiddenExtension: YES];
     
-    [panel beginSheetForDirectory: nil file: NSLocalizedString(@"untitled", "Save log panel -> default file name")
-            modalForWindow: [self window] modalDelegate: self
-            didEndSelector: @selector(writeToFileSheetClosed:returnCode:contextInfo:) contextInfo: sortedMessages];
-}
-
-- (void) writeToFileSheetClosed: (NSSavePanel *) panel returnCode: (NSInteger) code contextInfo: (NSArray *) messages
-{
-    if (code == NSOKButton)
-    {
-        //create the text to output
-        NSMutableArray * messageStrings = [NSMutableArray arrayWithCapacity: [messages count]];
-        for (NSDictionary * message in messages)
-            [messageStrings addObject: [self stringForMessage: message]];
+    [panel setNameFieldStringValue: NSLocalizedString(@"untitled", "Save log panel -> default file name")];
     
-        NSString * fileString = [messageStrings componentsJoinedByString: @"\n"];
-        
-        if (![fileString writeToFile: [panel filename] atomically: YES encoding: NSUTF8StringEncoding error: nil])
+    [panel beginSheetModalForWindow: [self window] completionHandler: ^(NSInteger result) {
+        if (result == NSFileHandlingPanelOKButton)
         {
-            NSAlert * alert = [[NSAlert alloc] init];
-            [alert addButtonWithTitle: NSLocalizedString(@"OK", "Save log alert panel -> button")];
-            [alert setMessageText: NSLocalizedString(@"Log Could Not Be Saved", "Save log alert panel -> title")];
-            [alert setInformativeText: [NSString stringWithFormat:
-                    NSLocalizedString(@"There was a problem creating the file \"%@\".",
-                    "Save log alert panel -> message"), [[panel filename] lastPathComponent]]];
-            [alert setAlertStyle: NSWarningAlertStyle];
+            //make the array sorted by date
+            NSSortDescriptor * descriptor = [NSSortDescriptor sortDescriptorWithKey: @"Index" ascending: YES];
+            NSArray * descriptors = [[NSArray alloc] initWithObjects: descriptor, nil];
+            NSArray * sortedMessages = [fDisplayedMessages sortedArrayUsingDescriptors: descriptors];
+            [descriptors release];
             
-            [alert runModal];
-            [alert release];
+            //create the text to output
+            NSMutableArray * messageStrings = [NSMutableArray arrayWithCapacity: [sortedMessages count]];
+            for (NSDictionary * message in sortedMessages)
+                [messageStrings addObject: [self stringForMessage: message]];
+            
+            NSString * fileString = [messageStrings componentsJoinedByString: @"\n"];
+            
+            if (![fileString writeToFile: [[panel URL] path] atomically: YES encoding: NSUTF8StringEncoding error: nil])
+            {
+                NSAlert * alert = [[NSAlert alloc] init];
+                [alert addButtonWithTitle: NSLocalizedString(@"OK", "Save log alert panel -> button")];
+                [alert setMessageText: NSLocalizedString(@"Log Could Not Be Saved", "Save log alert panel -> title")];
+                [alert setInformativeText: [NSString stringWithFormat:
+                                            NSLocalizedString(@"There was a problem creating the file \"%@\".",
+                                                              "Save log alert panel -> message"), [[[panel URL] path] lastPathComponent]]];
+                [alert setAlertStyle: NSWarningAlertStyle];
+                
+                [alert runModal];
+                [alert release];
+            }
         }
-    }
-    
-    [messages release];
+    }];
 }
 
 @end
@@ -455,16 +464,11 @@
     const NSInteger level = [[NSUserDefaults standardUserDefaults] integerForKey: @"MessageLevel"];
     NSString * filterString = [fFilterField stringValue];
     
-    NSMutableArray * tempMessages = [NSMutableArray arrayWithCapacity: [fMessages count]]; //rough guess
+    NSIndexSet * indexes = [fMessages indexesOfObjectsWithOptions: NSEnumerationConcurrent passingTest: ^BOOL(id message, NSUInteger idx, BOOL * stop) {
+        return [[(NSDictionary *)message objectForKey: @"Level"] integerValue] <= level && [self shouldIncludeMessageForFilter: filterString message: message];
+    }];
     
-    for (NSDictionary * message in fMessages)
-    {
-        if ([[message objectForKey: @"Level"] integerValue] <= level
-            && [self shouldIncludeMessageForFilter: filterString message: message])
-            [tempMessages addObject: message];
-    }
-    
-    [tempMessages sortUsingDescriptors: [fMessageTable sortDescriptors]];
+    NSArray * tempMessages = [[fMessages objectsAtIndexes: indexes] sortedArrayUsingDescriptors: [fMessageTable sortDescriptors]];
     
     const BOOL onLion = [NSApp isOnLionOrBetter];
     
@@ -541,7 +545,7 @@
             levelString = NSLocalizedString(@"Debug", "Message window -> level");
             break;
         default:
-            NSAssert1(NO, @"Unknown message log level: %d", level);
+            NSAssert1(NO, @"Unknown message log level: %ld", level);
     }
     
     return [NSString stringWithFormat: @"%@ %@ [%@] %@: %@", [message objectForKey: @"Date"],

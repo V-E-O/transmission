@@ -7,7 +7,7 @@
  * This exemption does not extend to derived works not owned by
  * the Transmission project.
  *
- * $Id: details.c 12679 2011-08-13 21:08:53Z jordan $
+ * $Id: details.c 13553 2012-10-07 17:51:56Z jordan $
  */
 
 #include <stddef.h>
@@ -211,7 +211,7 @@ refreshOptions( struct DetailsImpl * di, tr_torrent ** torrents, int n )
 
     /* down_limit_spin */
     if( n ) {
-        const int baseline = tr_torrentGetSpeedLimit_KBps( torrents[0], TR_DOWN );
+        const unsigned int baseline = tr_torrentGetSpeedLimit_KBps( torrents[0], TR_DOWN );
         int i;
         for( i=1; i<n; ++i )
             if( baseline != ( tr_torrentGetSpeedLimit_KBps( torrents[i], TR_DOWN ) ) )
@@ -235,7 +235,7 @@ refreshOptions( struct DetailsImpl * di, tr_torrent ** torrents, int n )
 
     /* up_limit_sping */
     if( n ) {
-        const int baseline = tr_torrentGetSpeedLimit_KBps( torrents[0], TR_UP );
+        const unsigned int  baseline = tr_torrentGetSpeedLimit_KBps( torrents[0], TR_UP );
         int i;
         for( i=1; i<n; ++i )
             if( baseline != ( tr_torrentGetSpeedLimit_KBps( torrents[i], TR_UP ) ) )
@@ -514,7 +514,7 @@ options_page_new( struct DetailsImpl * d )
     hig_workarea_add_section_divider( t, &row );
     hig_workarea_add_section_title( t, &row, _( "Seeding Limits" ) );
 
-    h = gtk_hbox_new( FALSE, GUI_PAD );
+    h = gtk_box_new( GTK_ORIENTATION_HORIZONTAL, GUI_PAD );
     w = d->ratio_combo = ratio_combo_new( );
     d->ratio_combo_tag = g_signal_connect( w, "changed", G_CALLBACK( onComboEnumChanged ), d );
     gtk_box_pack_start( GTK_BOX( h ), w, TRUE, TRUE, 0 );
@@ -524,7 +524,7 @@ options_page_new( struct DetailsImpl * d )
     gtk_box_pack_start( GTK_BOX( h ), w, FALSE, FALSE, 0 );
     hig_workarea_add_row( t, &row, _( "_Ratio:" ), h, NULL );
 
-    h = gtk_hbox_new( FALSE, GUI_PAD );
+    h = gtk_box_new( GTK_ORIENTATION_HORIZONTAL, GUI_PAD );
     w = d->idle_combo = idle_combo_new( );
     d->idle_combo_tag = g_signal_connect( w, "changed", G_CALLBACK( onComboEnumChanged ), d );
     gtk_box_pack_start( GTK_BOX( h ), w, TRUE, TRUE, 0 );
@@ -542,7 +542,6 @@ options_page_new( struct DetailsImpl * d )
     d->max_peers_spin = w;
     d->max_peers_spin_tag = tag;
 
-    hig_workarea_finish( t, &row );
     return t;
 }
 
@@ -557,13 +556,13 @@ activityString( int activity, bool finished )
 {
     switch( activity )
     {
-        case TR_STATUS_CHECK_WAIT:    return _( "Queued for verification" );
-        case TR_STATUS_CHECK:         return _( "Verifying local data" );
-        case TR_STATUS_DOWNLOAD_WAIT: return _( "Queued for download" );
-        case TR_STATUS_DOWNLOAD:      return _( "Downloading" );
-        case TR_STATUS_SEED_WAIT:     return _( "Queued for seeding" );
-        case TR_STATUS_SEED:          return _( "Seeding" );
-        case TR_STATUS_STOPPED:       return finished ? _( "Finished" ) : _( "Paused" );
+        case TR_STATUS_CHECK_WAIT:    return  _( "Queued for verification" );
+        case TR_STATUS_CHECK:         return  _( "Verifying local data" );
+        case TR_STATUS_DOWNLOAD_WAIT: return  _( "Queued for download" );
+        case TR_STATUS_DOWNLOAD:      return C_( "Verb", "Downloading" );
+        case TR_STATUS_SEED_WAIT:     return  _( "Queued for seeding" );
+        case TR_STATUS_SEED:          return C_( "Verb", "Seeding" );
+        case TR_STATUS_STOPPED:       return  finished ? _( "Finished" ) : _( "Paused" );
     }
 
     return "";
@@ -796,14 +795,11 @@ refreshInfo( struct DetailsImpl * di, tr_torrent ** torrents, int n )
         uint64_t leftUntilDone = 0;
         uint64_t haveUnchecked = 0;
         uint64_t haveValid = 0;
-        uint32_t verifiedPieces = 0;
         uint64_t available = 0;
         for( i=0; i<n; ++i ) {
             const tr_stat * st = stats[i];
-            const tr_info * inf = infos[i];
             haveUnchecked += st->haveUnchecked;
             haveValid += st->haveValid;
-            verifiedPieces += inf->pieceSize ? st->haveValid / inf->pieceSize : 0;
             sizeWhenDone += st->sizeWhenDone;
             leftUntilDone += st->leftUntilDone;
             available += st->sizeWhenDone - st->leftUntilDone + st->desiredAvailable;
@@ -1028,10 +1024,6 @@ info_page_new( struct DetailsImpl * di )
         gtk_misc_set_alignment( GTK_MISC( w ), 0.0f, 0.0f );
 
     hig_workarea_add_section_divider( t, &row );
-    hig_workarea_finish( t, &row );
-    return t;
-
-    hig_workarea_finish( t, &row );
     return t;
 }
 
@@ -1056,7 +1048,7 @@ getWebseedColumnNames( int column )
 {
     switch( column )
     {
-        case WEBSEED_COL_URL: return _( "Webseeds" );
+        case WEBSEED_COL_URL: return _( "Web Seeds" );
         case WEBSEED_COL_DOWNLOAD_RATE_DOUBLE:
         case WEBSEED_COL_DOWNLOAD_RATE_STRING: return _( "Down" );
         default: return "";
@@ -1731,10 +1723,10 @@ peer_page_new( struct DetailsImpl * di )
                                          GTK_SHADOW_IN );
     gtk_container_add( GTK_CONTAINER( w ), v );
 
-    vbox = gtk_vbox_new( FALSE, GUI_PAD );
+    vbox = gtk_box_new( GTK_ORIENTATION_VERTICAL, GUI_PAD );
     gtk_container_set_border_width( GTK_CONTAINER( vbox ), GUI_PAD_BIG );
 
-    v = gtk_vpaned_new( );
+    v = gtk_paned_new( GTK_ORIENTATION_VERTICAL );
     gtk_paned_pack1( GTK_PANED( v ), webtree, FALSE, TRUE );
     gtk_paned_pack2( GTK_PANED( v ), sw, TRUE, TRUE );
     gtk_box_pack_start( GTK_BOX( vbox ), v, TRUE, TRUE, 0 );
@@ -1839,7 +1831,7 @@ buildTrackerSummary( GString * gstr, const char * key, const tr_tracker_stat * s
             case TR_TRACKER_ACTIVE:
                 tr_strltime_rounded( timebuf, now - st->lastAnnounceStartTime, sizeof( timebuf ) );
                 g_string_append_c( gstr, '\n' );
-                g_string_append_printf( gstr, _( "Asking for more peers now... <small>%s</small>" ), timebuf );
+                g_string_append_printf( gstr, _( "Asking for more peers now… <small>%s</small>" ), timebuf );
                 break;
         }
 
@@ -1872,7 +1864,7 @@ buildTrackerSummary( GString * gstr, const char * key, const tr_tracker_stat * s
                 case TR_TRACKER_ACTIVE:
                     g_string_append_c( gstr, '\n' );
                     tr_strltime_rounded( timebuf, now - st->lastScrapeStartTime, sizeof( timebuf ) );
-                    g_string_append_printf( gstr, _( "Asking for peer counts now... <small>%s</small>" ), timebuf );
+                    g_string_append_printf( gstr, _( "Asking for peer counts now… <small>%s</small>" ), timebuf );
                     break;
             }
         }
@@ -2217,7 +2209,6 @@ on_edit_trackers( GtkButton * button, gpointer data )
         hig_workarea_add_wide_control( t, &row, l );
 
         w = gtk_text_view_new( );
-        gtk_widget_set_size_request( w, 500u, 166u );
         g_string_truncate( gstr, 0 );
         get_editable_tracker_list( gstr, tor );
         gtk_text_buffer_set_text( gtk_text_view_get_buffer( GTK_TEXT_VIEW( w ) ), gstr->str, -1 );
@@ -2229,9 +2220,9 @@ on_edit_trackers( GtkButton * button, gpointer data )
                                         GTK_POLICY_AUTOMATIC );
         gtk_container_add( GTK_CONTAINER( sw ), w );
         gtk_container_add( GTK_CONTAINER( fr ), sw );
+        gtk_widget_set_size_request (fr, 500u, 166u);
         hig_workarea_add_wide_tall_control( t, &row, fr );
 
-        hig_workarea_finish( t, &row );
         gtr_dialog_set_content( GTK_DIALOG( d ), t );
 
         g_object_set_qdata( G_OBJECT( d ), TORRENT_ID_KEY, GINT_TO_POINTER( torrent_id ) );
@@ -2372,7 +2363,7 @@ tracker_page_new( struct DetailsImpl * di )
     GtkWidget *vbox, *sw, *w, *v, *hbox;
     const int pad = ( GUI_PAD + GUI_PAD_BIG ) / 2;
 
-    vbox = gtk_vbox_new( FALSE, GUI_PAD );
+    vbox = gtk_box_new( GTK_ORIENTATION_VERTICAL, GUI_PAD );
     gtk_container_set_border_width( GTK_CONTAINER( vbox ), GUI_PAD_BIG );
 
     di->tracker_store = gtk_list_store_new( TRACKER_N_COLS, G_TYPE_INT,
@@ -2390,7 +2381,7 @@ tracker_page_new( struct DetailsImpl * di )
     gtk_tree_model_filter_set_visible_func( GTK_TREE_MODEL_FILTER( di->trackers_filtered ),
                                             trackerVisibleFunc, di, NULL );
 
-    hbox = gtk_hbox_new( FALSE, GUI_PAD_BIG );
+    hbox = gtk_box_new( GTK_ORIENTATION_HORIZONTAL, GUI_PAD_BIG );
 
         v = di->tracker_view = gtk_tree_view_new_with_model( GTK_TREE_MODEL( di->trackers_filtered ) );
         g_object_unref( di->trackers_filtered );
@@ -2425,7 +2416,7 @@ tracker_page_new( struct DetailsImpl * di )
 
     gtk_box_pack_start( GTK_BOX( hbox ), w, TRUE, TRUE, 0 );
 
-        v = gtk_vbox_new( FALSE, GUI_PAD );
+        v = gtk_box_new( GTK_ORIENTATION_VERTICAL, GUI_PAD );
 
         w = gtk_button_new_with_mnemonic( _( "_Add" ) );
         di->add_tracker_button = w;
@@ -2550,7 +2541,7 @@ gtr_torrent_details_dialog_new( GtkWindow * parent, TrCore * core )
     l = gtk_label_new( _( "Trackers" ) );
     gtk_notebook_append_page( GTK_NOTEBOOK( n ), w, l );
 
-    v = gtk_vbox_new( FALSE, 0 );
+    v = gtk_box_new( GTK_ORIENTATION_VERTICAL, 0 );
     di->file_list = gtr_file_list_new( core, 0 );
     di->file_label = gtk_label_new( _( "File listing not available for combined torrent properties" ) );
     gtk_box_pack_start( GTK_BOX( v ), di->file_list, TRUE, TRUE, 0 );

@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: StatusBarController.m 12687 2011-08-15 11:16:44Z livings124 $
+ * $Id: StatusBarController.m 13434 2012-08-13 00:52:04Z livings124 $
  * 
- * Copyright (c) 2011 Transmission authors and contributors
+ * Copyright (c) 2011-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -76,6 +76,8 @@ typedef enum
     [[fStatusButton cell] setBackgroundStyle: NSBackgroundStyleRaised];
     [[fTotalDLField cell] setBackgroundStyle: NSBackgroundStyleRaised];
     [[fTotalULField cell] setBackgroundStyle: NSBackgroundStyleRaised];
+    [[fTotalDLImageView cell] setBackgroundStyle: NSBackgroundStyleRaised];
+    [[fTotalULImageView cell] setBackgroundStyle: NSBackgroundStyleRaised];
     
     [self updateSpeedFieldsToolTips];
     
@@ -163,7 +165,7 @@ typedef enum
             statusLabel = STATUS_TRANSFER_SESSION;
             break;
         default:
-            NSAssert1(NO, @"Unknown status label tag received: %d", [sender tag]);
+            NSAssert1(NO, @"Unknown status label tag received: %ld", [sender tag]);
             return;
     }
     
@@ -233,7 +235,7 @@ typedef enum
                 statusLabel = STATUS_TRANSFER_SESSION;
                 break;
             default:
-                NSAssert1(NO, @"Unknown status label tag received: %d", [menuItem tag]);
+                NSAssert1(NO, @"Unknown status label tag received: %ld", [menuItem tag]);
         }
         
         [menuItem setState: [statusLabel isEqualToString: [[NSUserDefaults standardUserDefaults] stringForKey: @"StatusLabel"]]

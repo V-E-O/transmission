@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: PrefsController.h 12686 2011-08-15 00:30:29Z livings124 $
+ * $Id: PrefsController.h 13449 2012-08-19 19:06:52Z livings124 $
  *
- * Copyright (c) 2005-2011 Transmission authors and contributors
+ * Copyright (c) 2005-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -29,6 +29,7 @@
 
 @interface PrefsController : NSWindowController <NSToolbarDelegate>
 {
+    tr_session * fHandle;
     NSUserDefaults * fDefaults;
     BOOL fHasLoaded;
     
@@ -36,6 +37,7 @@
     
     NSString * fInitialString;
     
+    IBOutlet NSButton * fBuiltInGrowlButton, *fGrowlAppButton;
     IBOutlet NSTextField * fCheckForUpdatesLabel;
     IBOutlet NSButton * fCheckForUpdatesButton, * fCheckForUpdatesBetaButton;
     
@@ -65,8 +67,7 @@
     NSString * fRPCPassword;
 }
 
-+ (void) setHandle: (tr_session *) handle;
-+ (tr_session *) handle;
+- (id) initWithHandle: (tr_session *) handle;
 
 - (void) setAutoUpdateToBeta: (id) sender;
 
@@ -101,6 +102,10 @@
 - (void) setAutoStartDownloads: (id) sender;
 
 - (void) setBadge: (id) sender;
+
+- (IBAction) setBuiltInGrowlEnabled: (id) sender;
+- (IBAction) openGrowlApp: (id) sender;
+- (void) openNotificationSystemPrefs: (id) sender;
 
 - (void) resetWarnings: (id) sender;
 

@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: DragOverlayWindow.m 11617 2011-01-01 20:42:14Z livings124 $
+ * $Id: DragOverlayWindow.m 13340 2012-06-10 02:35:58Z livings124 $
  *
- * Copyright (c) 2007-2011 Transmission authors and contributors
+ * Copyright (c) 2007-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -136,7 +136,7 @@
     
     NSImage * icon;
     if (count == 1)
-        icon = [[NSWorkspace sharedWorkspace] iconForFileType: folder ? NSFileTypeForHFSTypeCode('fldr') : [name pathExtension]];
+        icon = [[NSWorkspace sharedWorkspace] iconForFileType: folder ? NSFileTypeForHFSTypeCode(kGenericFolderIcon) : [name pathExtension]];
     else
     {
         name = [NSString stringWithFormat: NSLocalizedString(@"%@ Torrent Files", "Drag overlay -> torrents"),
@@ -151,14 +151,14 @@
 
 - (void) setFile: (NSString *) file
 {
-    [[self contentView] setOverlay: [NSImage imageNamed: @"CreateLarge.png"]
+    [[self contentView] setOverlay: [NSImage imageNamed: @"CreateLarge"]
         mainLine: NSLocalizedString(@"Create a Torrent File", "Drag overlay -> file") subLine: file];
     [self fadeIn];
 }
 
 - (void) setURL: (NSString *) url
 {
-    [[self contentView] setOverlay: [NSImage imageNamed: @"Globe.png"]
+    [[self contentView] setOverlay: [NSImage imageNamed: @"Globe"]
         mainLine: NSLocalizedString(@"Web Address", "Drag overlay -> url") subLine: url];
     [self fadeIn];
 }

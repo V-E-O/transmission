@@ -7,7 +7,7 @@
  * This exemption does not extend to derived works not owned by
  * the Transmission project.
  *
- * $Id: filter.c 12872 2011-09-14 17:22:54Z jordan $
+ * $Id: filter.c 13388 2012-07-14 19:26:55Z jordan $
  */
 
 #include <stdlib.h> /* qsort() */
@@ -689,30 +689,34 @@ activity_filter_model_new( GtkTreeModel * tmodel )
     int i, n;
     struct {
         int type;
+        const char * context;
         const char * name;
         const char * stock_id;
     } types[] = {
-        { ACTIVITY_FILTER_ALL, N_( "All" ), NULL },
-        { ACTIVITY_FILTER_SEPARATOR, NULL, NULL },
-        { ACTIVITY_FILTER_ACTIVE, N_( "Active" ), GTK_STOCK_EXECUTE },
-        { ACTIVITY_FILTER_DOWNLOADING, N_( "Downloading" ), GTK_STOCK_GO_DOWN },
-        { ACTIVITY_FILTER_SEEDING, N_( "Seeding" ), GTK_STOCK_GO_UP },
-        { ACTIVITY_FILTER_PAUSED, N_( "Paused" ), GTK_STOCK_MEDIA_PAUSE },
-        { ACTIVITY_FILTER_FINISHED, N_( "Finished" ), NULL },
-        { ACTIVITY_FILTER_VERIFYING, N_( "Verifying" ), GTK_STOCK_REFRESH },
-        { ACTIVITY_FILTER_ERROR, N_( "Error" ), GTK_STOCK_DIALOG_ERROR }
+        { ACTIVITY_FILTER_ALL, NULL, N_( "All" ), NULL },
+        { ACTIVITY_FILTER_SEPARATOR, NULL, NULL, NULL },
+        { ACTIVITY_FILTER_ACTIVE, NULL, N_( "Active" ), GTK_STOCK_EXECUTE },
+        { ACTIVITY_FILTER_DOWNLOADING, "Verb", NC_( "Verb", "Downloading" ), GTK_STOCK_GO_DOWN },
+        { ACTIVITY_FILTER_SEEDING, "Verb", NC_( "Verb", "Seeding" ), GTK_STOCK_GO_UP },
+        { ACTIVITY_FILTER_PAUSED, NULL, N_( "Paused" ), GTK_STOCK_MEDIA_PAUSE },
+        { ACTIVITY_FILTER_FINISHED, NULL, N_( "Finished" ), NULL },
+        { ACTIVITY_FILTER_VERIFYING, "Verb", NC_( "Verb", "Verifying" ), GTK_STOCK_REFRESH },
+        { ACTIVITY_FILTER_ERROR, NULL, N_( "Error" ), GTK_STOCK_DIALOG_ERROR }
     };
     GtkListStore * store = gtk_list_store_new( ACTIVITY_FILTER_N_COLS,
                                                G_TYPE_STRING,
                                                G_TYPE_INT,
                                                G_TYPE_INT,
                                                G_TYPE_STRING );
-    for( i=0, n=G_N_ELEMENTS(types); i<n; ++i )
+    for( i=0, n=G_N_ELEMENTS(types); i<n; ++i ) {
+        const char * name = types[i].context ? g_dpgettext2( NULL, types[i].context, types[i].name )
+                                             : _( types[i].name );
         gtk_list_store_insert_with_values( store, NULL, -1,
-            ACTIVITY_FILTER_COL_NAME, _( types[i].name ),
+            ACTIVITY_FILTER_COL_NAME, name,
             ACTIVITY_FILTER_COL_TYPE, types[i].type,
             ACTIVITY_FILTER_COL_STOCK_ID, types[i].stock_id,
             -1 );
+    }
 
     g_object_set_qdata( G_OBJECT( store ), TORRENT_MODEL_KEY, tmodel );
     activity_filter_model_update( store );
@@ -984,7 +988,7 @@ gtr_filter_bar_new( tr_session * session, GtkTreeModel * tmodel, GtkTreeModel **
     g_signal_connect( data->activity, "changed", G_CALLBACK( selection_changed_cb ), data );
 
 
-    h = gtk_hbox_new( FALSE, GUI_PAD_SMALL );
+    h = gtk_box_new( GTK_ORIENTATION_HORIZONTAL, GUI_PAD_SMALL );
 
     /* add the activity combobox */
     str = _( "_Show:" );

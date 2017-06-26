@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: FileListNode.m 12483 2011-05-31 22:26:04Z livings124 $
+ * $Id: FileListNode.m 13434 2012-08-13 00:52:04Z livings124 $
  *
- * Copyright (c) 2008-2011 Transmission authors and contributors
+ * Copyright (c) 2008-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -31,6 +31,14 @@
 @end
 
 @implementation FileListNode
+
+#warning remove ivars in header when 64-bit only (or it compiles in 32-bit mode)
+@synthesize name = fName;
+@synthesize path = fPath;
+@synthesize torrent = fTorrent;
+@synthesize size = fSize;
+@synthesize icon = fIcon;
+@synthesize isFolder = fIsFolder;
 
 - (id) initWithFolderName: (NSString *) name path: (NSString *) path torrent: (Torrent *) torrent
 {
@@ -91,24 +99,9 @@
 - (NSString *) description
 {
     if (!fIsFolder)
-        return [NSString stringWithFormat: @"%@ (%d)", fName, [fIndexes firstIndex]];
+        return [NSString stringWithFormat: @"%@ (%ld)", fName, [fIndexes firstIndex]];
     else
         return [NSString stringWithFormat: @"%@ (folder: %@)", fName, fIndexes];
-}
-
-- (BOOL) isFolder
-{
-    return fIsFolder;
-}
-
-- (NSString *) name
-{
-    return fName;
-}
-
-- (NSString *) path
-{
-    return fPath;
 }
 
 - (NSIndexSet *) indexes
@@ -116,15 +109,10 @@
     return fIndexes;
 }
 
-- (uint64_t) size
-{
-    return fSize;
-}
-
 - (NSImage *) icon
 {
     if (!fIcon)
-        fIcon = [[[NSWorkspace sharedWorkspace] iconForFileType: fIsFolder ? NSFileTypeForHFSTypeCode('fldr')
+        fIcon = [[[NSWorkspace sharedWorkspace] iconForFileType: fIsFolder ? NSFileTypeForHFSTypeCode(kGenericFolderIcon)
                                                                             : [fName pathExtension]] retain];
     return fIcon;
 }
@@ -134,11 +122,6 @@
     NSAssert(fIsFolder, @"method can only be invoked on folders");
     
     return fChildren;
-}
-
-- (Torrent *) torrent
-{
-    return fTorrent;
 }
 
 @end

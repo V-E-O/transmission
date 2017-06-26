@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: InfoGeneralViewController.m 11617 2011-01-01 20:42:14Z livings124 $
+ * $Id: InfoGeneralViewController.m 13660 2012-12-13 13:38:58Z livings124 $
  *
- * Copyright (c) 2010-2011 Transmission authors and contributors
+ * Copyright (c) 2010-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -23,7 +23,6 @@
  *****************************************************************************/
 
 #import "InfoGeneralViewController.h"
-#import "NSApplicationAdditions.h"
 #import "NSStringAdditions.h"
 #import "Torrent.h"
 
@@ -45,31 +44,55 @@
     return self;
 }
 
-- (void) awakeFromNib
-{
-    if (![NSApp isOnSnowLeopardOrBetter])
-    {
-        NSImage * revealOn = [[NSImage imageNamed: @"RevealOn.png"] copy],
-                * revealOff = [[NSImage imageNamed: @"RevealOff.png"] copy];
-        
-        [revealOn setFlipped: NO];
-        [revealOff setFlipped: NO];
-        
-        [fRevealDataButton setImage: revealOff];
-        [fRevealDataButton setAlternateImage: revealOn];
-        
-        [revealOn release];
-        [revealOff release];
-    }
-}
-
 - (void) dealloc
 {
     [fTorrents release];
     
     [super dealloc];
 }
-
+/*
+- (void) awakeFromNib
+{
+    #warning remove when 10.7-only with auto layout
+    [fInfoSectionLabel sizeToFit];
+    [fWhereSectionLabel sizeToFit];
+    
+    NSArray * labels = @[ fPiecesLabel, fHashLabel, fSecureLabel, fCreatorLabel, fDateCreatedLabel, fCommentLabel, fDataLocationLabel ];
+    
+    CGFloat oldMaxWidth = 0.0, originX, newMaxWidth = 0.0;
+    for (NSTextField * label in labels)
+    {
+        const NSRect oldFrame = [label frame];
+        if (oldFrame.size.width > oldMaxWidth)
+        {
+            oldMaxWidth = oldFrame.size.width;
+            originX = oldFrame.origin.x;
+        }
+        
+        [label sizeToFit];
+        const CGFloat newWidth = [label bounds].size.width;
+        if (newWidth > newMaxWidth)
+            newMaxWidth = newWidth;
+    }
+    
+    for (NSTextField * label in labels)
+    {
+        NSRect frame = [label frame];
+        frame.origin.x = originX + (newMaxWidth - frame.size.width);
+        [label setFrame: frame];
+    }
+    
+    NSArray * fields = @[ fPiecesField, fHashField, fSecureField, fCreatorField, fDateCreatedField, fCommentScrollView, fDataLocationField ];
+    
+    const CGFloat widthIncrease = newMaxWidth - oldMaxWidth;
+    for (NSView * field in fields) {
+        NSRect frame = [field frame];
+        frame.origin.x += widthIncrease;
+        frame.size.width -= widthIncrease;
+        [field setFrame: frame];
+    }
+}
+*/
 - (void) setInfoForTorrents: (NSArray *) torrents
 {
     //don't check if it's the same in case the metadata changed
@@ -103,13 +126,8 @@
     if (!location)
         return;
     
-    if ([NSApp isOnSnowLeopardOrBetter])
-    {
-        NSURL * file = [NSURL fileURLWithPath: location];
-        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs: [NSArray arrayWithObject: file]];
-    }
-    else
-        [[NSWorkspace sharedWorkspace] selectFile: location inFileViewerRootedAtPath: nil];
+    NSURL * file = [NSURL fileURLWithPath: location];
+    [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs: [NSArray arrayWithObject: file]];
 }
 
 @end
@@ -122,7 +140,7 @@
     {
         Torrent * torrent = [fTorrents objectAtIndex: 0];
         
-        NSString * piecesString = ![torrent isMagnet] ? [NSString stringWithFormat: @"%d, %@", [torrent pieceCount],
+        NSString * piecesString = ![torrent isMagnet] ? [NSString stringWithFormat: @"%ld, %@", [torrent pieceCount],
                                         [NSString stringForFileSize: [torrent pieceSize]]] : @"";
         [fPiecesField setStringValue: piecesString];
                                         

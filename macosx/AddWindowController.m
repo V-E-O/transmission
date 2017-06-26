@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: AddWindowController.m 12689 2011-08-16 02:33:18Z livings124 $
+ * $Id: AddWindowController.m 13602 2012-10-30 00:22:10Z livings124 $
  *
- * Copyright (c) 2008-2011 Transmission authors and contributors
+ * Copyright (c) 2008-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -42,9 +42,7 @@
 
 - (void) confirmAdd;
 
-- (void) setDestinationPath: (NSString *) destination;
-
-- (void) folderChoiceClosed: (NSOpenPanel *) openPanel returnCode: (NSInteger) code contextInfo: (void *) contextInfo;
+- (void) setDestinationPath: (NSString *) destination determinationType: (TorrentDeterminationType) determinationType;
 
 - (void) setGroupsMenu;
 - (void) changeGroupValue: (id) sender;
@@ -57,7 +55,7 @@
 
 - (id) initWithTorrent: (Torrent *) torrent destination: (NSString *) path lockDestination: (BOOL) lockDestination
     controller: (Controller *) controller torrentFile: (NSString *) torrentFile
-    deleteTorrent: (BOOL) deleteTorrent canToggleDelete: (BOOL) canToggleDelete
+    deleteTorrentCheckEnableInitially: (BOOL) deleteTorrent canToggleDelete: (BOOL) canToggleDelete
 {
     if ((self = [super initWithWindowNibName: @"AddWindow"]))
     {
@@ -69,11 +67,12 @@
         
         fTorrentFile = [[torrentFile stringByExpandingTildeInPath] retain];
         
-        fDeleteTorrentInitial = deleteTorrent;
-        fDeleteEnableInitial = canToggleDelete;
+        fDeleteTorrentEnableInitially = deleteTorrent;
+        fCanToggleDelete = canToggleDelete;
         
         fGroupValue = [torrent groupValue];
-        
+        fGroupValueDetermination = TorrentDeterminationAutomatic;
+
         [fVerifyIndicator setUsesThreadedAnimation: YES];
     }
     return self;
@@ -81,11 +80,9 @@
 
 - (void) awakeFromNib
 {
-    [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(updateStatusField:)
-        name: @"TorrentFileCheckChange" object: fTorrent];
+    [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(updateCheckButtons:) name: @"TorrentFileCheckChange" object: fTorrent];
     
-    [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(updateGroupMenu:)
-        name: @"UpdateGroups" object: nil];
+    [[NSNotificationCenter defaultCenter] addObserver: self selector: @selector(updateGroupMenu:) name: @"UpdateGroups" object: nil];
     
     [fFileController setTorrent: fTorrent];
     
@@ -96,7 +93,20 @@
     
     [fIconView setImage: [fTorrent icon]];
     
-    [self updateStatusField: nil];
+    if (![fTorrent isFolder])
+    {
+        [fFileFilterField setHidden: YES];
+        [fCheckAllButton setHidden: YES];
+        [fUncheckAllButton setHidden: YES];
+        
+        NSRect scrollFrame = [fFileScrollView frame];
+        const CGFloat diff = NSMinY([fFileScrollView frame]) - NSMinY([fFileFilterField frame]);
+        scrollFrame.origin.y -= diff;
+        scrollFrame.size.height += diff;
+        [fFileScrollView setFrame: scrollFrame];
+    }
+    else
+        [self updateCheckButtons: nil];
     
     [self setGroupsMenu];
     [fGroupPopUp selectItemWithTag: fGroupValue];
@@ -113,19 +123,19 @@
     
     [fStartCheck setState: [[NSUserDefaults standardUserDefaults] boolForKey: @"AutoStartDownload"] ? NSOnState : NSOffState];
     
-    [fDeleteCheck setState: fDeleteTorrentInitial ? NSOnState : NSOffState];
-    [fDeleteCheck setEnabled: fDeleteEnableInitial];
+    [fDeleteCheck setState: fDeleteTorrentEnableInitially ? NSOnState : NSOffState];
+    [fDeleteCheck setEnabled: fCanToggleDelete];
     
     if (fDestination)
-        [self setDestinationPath: fDestination];
+        [self setDestinationPath: fDestination determinationType: (fLockDestination ? TorrentDeterminationUserSpecified : TorrentDeterminationAutomatic)];
     else
     {
         [fLocationField setStringValue: @""];
         [fLocationImageView setImage: nil];
     }
     
-    fTimer = [NSTimer scheduledTimerWithTimeInterval: UPDATE_SECONDS target: self
-                selector: @selector(updateFiles) userInfo: nil repeats: YES];
+    fTimer = [[NSTimer scheduledTimerWithTimeInterval: UPDATE_SECONDS target: self
+                selector: @selector(updateFiles) userInfo: nil repeats: YES] retain];
     [self updateFiles];
 }
 
@@ -141,6 +151,7 @@
     [[NSNotificationCenter defaultCenter] removeObserver: self];
     
     [fTimer invalidate];
+    [fTimer release];
     
     [fDestination release];
     [fTorrentFile release];
@@ -166,8 +177,18 @@
     [panel setMessage: [NSString stringWithFormat: NSLocalizedString(@"Select the download folder for \"%@\"",
                         "Add -> select destination folder"), [fTorrent name]]];
     
-    [panel beginSheetForDirectory: nil file: nil types: nil modalForWindow: [self window] modalDelegate: self
-            didEndSelector: @selector(folderChoiceClosed:returnCode:contextInfo:) contextInfo: nil];
+    [panel beginSheetModalForWindow: [self window] completionHandler: ^(NSInteger result) {
+        if (result == NSFileHandlingPanelOKButton)
+        {
+            fLockDestination = YES;
+            [self setDestinationPath: [[[panel URLs] objectAtIndex: 0] path] determinationType: TorrentDeterminationUserSpecified];
+        }
+        else
+        {
+            if (!fDestination)
+                [self performSelectorOnMainThread: @selector(cancelAdd:) withObject: nil waitUntilDone: NO];
+        }
+    }];
 }
 
 - (void) add: (id) sender
@@ -201,12 +222,28 @@
 - (BOOL) windowShouldClose: (id) window
 {
     [fTimer invalidate];
+    [fTimer release];
     fTimer = nil;
     
     [fFileController setTorrent: nil]; //avoid a crash when window tries to update
     
     [fController askOpenConfirmed: self add: NO];
     return YES;
+}
+
+- (void) setFileFilterText: (id) sender
+{
+    [fFileController setFilterText: [sender stringValue]];
+}
+
+- (IBAction) checkAll: (id) sender
+{
+    [fFileController checkAll];
+}
+
+- (IBAction) uncheckAll: (id) sender
+{
+    [fFileController uncheckAll];
 }
 
 - (void) verifyLocalData: (id) sender
@@ -223,16 +260,23 @@
         case POPUP_PRIORITY_HIGH: priority = TR_PRI_HIGH; break;
         case POPUP_PRIORITY_NORMAL: priority = TR_PRI_NORMAL; break;
         case POPUP_PRIORITY_LOW: priority = TR_PRI_LOW; break;
-        default: NSAssert1(NO, @"Unknown priority tag for adding torrent: %d", [sender tag]);
+        default: NSAssert1(NO, @"Unknown priority tag for adding torrent: %ld", [sender tag]);
     }
     [fTorrent setPriority: priority];
 }
 
-- (void) updateStatusField: (NSNotification *) notification
+- (void) updateCheckButtons: (NSNotification *) notification
 {
     NSString * statusString = [NSString stringForFileSize: [fTorrent size]];
     if ([fTorrent isFolder])
     {
+        //check buttons
+        //keep synced with identical code in InfoFileViewController.m
+        const NSInteger filesCheckState = [fTorrent checkForFiles: [NSIndexSet indexSetWithIndexesInRange: NSMakeRange(0, [fTorrent fileCount])]];
+        [fCheckAllButton setEnabled: filesCheckState != NSOnState]; //if anything is unchecked
+        [fUncheckAllButton setEnabled: ![fTorrent allDownloaded]]; //if there are any checked files that aren't finished
+        
+        //status field
         NSString * fileString;
         NSInteger count = [fTorrent fileCount];
         if (count != 1)
@@ -256,6 +300,7 @@
     if (![fGroupPopUp selectItemWithTag: fGroupValue])
     {
         fGroupValue = -1;
+		fGroupValueDetermination = TorrentDeterminationAutomatic;
         [fGroupPopUp selectItemWithTag: fGroupValue];
     }
 }
@@ -268,7 +313,9 @@
 {
     [fTorrent update];
     
-    [fFileController reloadData];
+    [fFileController refresh];
+    
+    [self updateCheckButtons: nil]; //call in case button state changed by checking
     
     if ([fTorrent isChecking])
     {
@@ -288,10 +335,11 @@
 - (void) confirmAdd
 {
     [fTimer invalidate];
+    [fTimer release];
     fTimer = nil;
-    [fTorrent setGroupValue: fGroupValue];
-    
-    if (fTorrentFile && [fDeleteCheck state] == NSOnState)
+    [fTorrent setGroupValue: fGroupValue  determinationType: fGroupValueDetermination];
+
+    if (fTorrentFile && fCanToggleDelete && [fDeleteCheck state] == NSOnState)
         [Torrent trashFile: fTorrentFile];
     
     if ([fStartCheck state] == NSOnState)
@@ -303,7 +351,7 @@
     [fController askOpenConfirmed: self add: YES]; //ensure last, since it releases this controller
 }
 
-- (void) setDestinationPath: (NSString *) destination
+- (void) setDestinationPath: (NSString *) destination determinationType: (TorrentDeterminationType) determinationType
 {
     destination = [destination stringByExpandingTildeInPath];
     if (!fDestination || ![fDestination isEqualToString: destination])
@@ -311,7 +359,7 @@
         [fDestination release];
         fDestination = [destination retain];
         
-        [fTorrent changeDownloadFolderBeforeUsing: fDestination];
+        [fTorrent changeDownloadFolderBeforeUsing: fDestination determinationType: determinationType];
     }
     
     [fLocationField setStringValue: [fDestination stringByAbbreviatingWithTildeInPath]];
@@ -320,20 +368,6 @@
     ExpandedPathToIconTransformer * iconTransformer = [[ExpandedPathToIconTransformer alloc] init];
     [fLocationImageView setImage: [iconTransformer transformedValue: fDestination]];
     [iconTransformer release];
-}
-
-- (void) folderChoiceClosed: (NSOpenPanel *) openPanel returnCode: (NSInteger) code contextInfo: (void *) contextInfo
-{
-    if (code == NSOKButton)
-    {
-        fLockDestination = NO;
-        [self setDestinationPath: [[openPanel filenames] objectAtIndex: 0]];
-    }
-    else
-    {
-        if (!fDestination)
-            [self performSelectorOnMainThread: @selector(cancelAdd:) withObject: nil waitUntilDone: NO];
-    }
 }
 
 - (void) setGroupsMenu
@@ -346,13 +380,14 @@
 {
     NSInteger previousGroup = fGroupValue;
     fGroupValue = [sender tag];
-    
+    fGroupValueDetermination = TorrentDeterminationUserSpecified;
+
     if (!fLockDestination)
     {
         if ([[GroupsController groups] usesCustomDownloadLocationForIndex: fGroupValue])
-            [self setDestinationPath: [[GroupsController groups] customDownloadLocationForIndex: fGroupValue]];
+            [self setDestinationPath: [[GroupsController groups] customDownloadLocationForIndex: fGroupValue] determinationType: TorrentDeterminationAutomatic];
         else if ([fDestination isEqualToString: [[GroupsController groups] customDownloadLocationForIndex: previousGroup]])
-            [self setDestinationPath: [[NSUserDefaults standardUserDefaults] stringForKey: @"DownloadFolder"]];
+            [self setDestinationPath: [[NSUserDefaults standardUserDefaults] stringForKey: @"DownloadFolder"] determinationType: TorrentDeterminationAutomatic];
         else;
     }
 }

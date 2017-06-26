@@ -7,10 +7,18 @@
 
    The JSON terminology in RFC 4627 is used.
 
-   In benc terms, a JSON "array" is equivalent to a benc list,
-   a JSON "object" is equivalent to a benc dictionary,
-   and a JSON object's "keys" are the dictionary's string keys.
+   JSON is fairly common now, but for the benefit of
+   torrent developers familiar with benc:
+   a JSON array is equivalent to a benc list,
+   a JSON object is equivalent to a benc dictionary,
+   and a JSON object's keys are the dictionary's string keys.
 
+1.2  Resources
+
+   The command-line utility "transmission-remote" uses this RPC API.
+   Several developers have reported using its --debug JSON output as
+   a reference when developing/debugging their own code.
+   
 2.  Message Format
 
    Messages are formatted as objects.  There are two types:
@@ -101,7 +109,7 @@
    "priority-normal"     | array      indices of normal-priority file(s)
    "queuePosition"       | number     position of this torrent in its queue [0...n)
    "seedIdleLimit"       | number     torrent-level number of minutes of seeding inactivity
-   "seedIdleMode"        | number     which seeding inactivity to use.  See tr_inactvelimit
+   "seedIdleMode"        | number     which seeding inactivity to use.  See tr_idlelimit
    "seedRatioLimit"      | double     torrent-level seeding ratio
    "seedRatioMode"       | number     which ratio to use.  See tr_ratiolimit
    "trackerAdd"          | array      strings of announce URLs to add

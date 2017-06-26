@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: FilePriorityCell.m 12483 2011-05-31 22:26:04Z livings124 $
+ * $Id: FilePriorityCell.m 13340 2012-06-10 02:35:58Z livings124 $
  * 
- * Copyright (c) 2007-2011 Transmission authors and contributors
+ * Copyright (c) 2007-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -25,10 +25,10 @@
 #import "FilePriorityCell.h"
 #import "FileOutlineView.h"
 #import "FileListNode.h"
-#import "NSApplicationAdditions.h"
+#import "NSImageAdditions.h"
 #import "Torrent.h"
 
-#define IMAGE_OVERLAP 3.0
+#define IMAGE_OVERLAP 1.0
 
 @implementation FilePriorityCell
 
@@ -46,9 +46,9 @@
             [self setWidth: 9.0f forSegment: i]; //9 is minimum size to get proper look
         }
         
-        [self setImage: [NSImage imageNamed: @"PriorityControlLow.png"] forSegment: 0];
-        [self setImage: [NSImage imageNamed: @"PriorityControlNormal.png"] forSegment: 1];
-        [self setImage: [NSImage imageNamed: @"PriorityControlHigh.png"] forSegment: 2];
+        [self setImage: [NSImage imageNamed: @"PriorityControlLow"] forSegment: 0];
+        [self setImage: [NSImage imageNamed: @"PriorityControlNormal"] forSegment: 1];
+        [self setImage: [NSImage imageNamed: @"PriorityControlHigh"] forSegment: 2];
         
         fHoverRow = NO;
     }
@@ -85,7 +85,7 @@
     [torrent setFilePriority: priority forIndexes: [(FileListNode *)[self representedObject] indexes]];
     
     FileOutlineView * controlView = (FileOutlineView *)[self controlView];
-    [controlView reloadData];
+    [controlView setNeedsDisplay: YES];
 }
 
 - (void) addTrackingAreasForView: (NSView *) controlView inRect: (NSRect) cellFrame withUserInfo: (NSDictionary *) userInfo
@@ -131,28 +131,33 @@
         
         if (count == 0)
         {
-            NSImage * image = [NSImage imageNamed: @"PriorityNone.png"];
-            [images addObject: image];
-            totalWidth = [image size].width;
+            //if ([self backgroundStyle] != NSBackgroundStyleDark)
+            {
+                NSImage * image = [[NSImage imageNamed: @"PriorityNormalTemplate"] imageWithColor: [NSColor lightGrayColor]];
+                [images addObject: image];
+                totalWidth = [image size].width;
+            }
         }
         else
         {
+            NSColor * priorityColor = [self backgroundStyle] == NSBackgroundStyleDark ? [NSColor whiteColor] : [NSColor darkGrayColor];
+            
             totalWidth = 0.0;
             if ([priorities containsObject: [NSNumber numberWithInteger: TR_PRI_LOW]])
             {
-                NSImage * image = [NSImage imageNamed: @"PriorityLow.png"];
+                NSImage * image = [[NSImage imageNamed: @"PriorityLowTemplate"] imageWithColor: priorityColor];
                 [images addObject: image];
                 totalWidth += [image size].width;
             }
             if ([priorities containsObject: [NSNumber numberWithInteger: TR_PRI_NORMAL]])
             {
-                NSImage * image = [NSImage imageNamed: @"PriorityNormal.png"];
+                NSImage * image = [[NSImage imageNamed: @"PriorityNormalTemplate"] imageWithColor: priorityColor];
                 [images addObject: image];
                 totalWidth += [image size].width;
             }
             if ([priorities containsObject: [NSNumber numberWithInteger: TR_PRI_HIGH]])
             {
-                NSImage * image = [NSImage imageNamed: @"PriorityHigh.png"];
+                NSImage * image = [[NSImage imageNamed: @"PriorityHighTemplate"] imageWithColor: priorityColor];
                 [images addObject: image];
                 totalWidth += [image size].width;
             }
@@ -166,17 +171,9 @@
         for (NSImage * image in images)
         {
             const NSSize imageSize = [image size];
-            NSRect imageRect = NSMakeRect(currentWidth, floor(NSMidY(cellFrame) - imageSize.height * 0.5), imageSize.width, imageSize.height);
+            const NSRect imageRect = NSMakeRect(currentWidth, floor(NSMidY(cellFrame) - imageSize.height * 0.5), imageSize.width, imageSize.height);
             
-            if ([NSApp isOnSnowLeopardOrBetter])
-                [image drawInRect: imageRect fromRect: NSZeroRect operation: NSCompositeSourceOver fraction: 1.0 respectFlipped: YES hints: nil];
-            else
-            {
-                image = [image copy];
-                [image setFlipped: YES];
-                [image drawInRect: imageRect fromRect: NSZeroRect operation: NSCompositeSourceOver fraction: 1.0];
-                [image release];
-            }
+            [image drawInRect: imageRect fromRect: NSZeroRect operation: NSCompositeSourceOver fraction: 1.0 respectFlipped: YES hints: nil];
             
             currentWidth += imageSize.width - IMAGE_OVERLAP;
         }

@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: BonjourController.m 12596 2011-07-26 22:46:33Z livings124 $
+ * $Id: BonjourController.m 13491 2012-09-10 02:01:07Z livings124 $
  *
- * Copyright (c) 2008-2011 Transmission authors and contributors
+ * Copyright (c) 2008-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -24,14 +24,24 @@
 
 #import "BonjourController.h"
 
+#define BONJOUR_SERVICE_NAME_MAX_LENGTH 63
+
 @implementation BonjourController
 
 BonjourController * fDefaultController = nil;
 + (BonjourController *) defaultController
 {
-    if (!fDefaultController)
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
         fDefaultController = [[BonjourController alloc] init];
+    });
+    
     return fDefaultController;
+}
+
++ (BOOL) defaultControllerExists
+{
+    return fDefaultController != nil;
 }
 
 - (void) dealloc
@@ -40,11 +50,13 @@ BonjourController * fDefaultController = nil;
     [super dealloc];
 }
 
-- (void) startWithPort: (NSInteger) port
+- (void) startWithPort: (int) port
 {
     [self stop];
     
-    NSString * serviceName = [NSString stringWithFormat: @"Transmission Web Interface (%@ - %@)", NSUserName(), [[NSHost currentHost] localizedName]];
+    NSMutableString * serviceName = [NSMutableString stringWithFormat: @"Transmission (%@ - %@)", NSUserName(), [[NSHost currentHost] localizedName]];
+    if ([serviceName length] > BONJOUR_SERVICE_NAME_MAX_LENGTH)
+        [serviceName deleteCharactersInRange: NSMakeRange(BONJOUR_SERVICE_NAME_MAX_LENGTH, [serviceName length] - BONJOUR_SERVICE_NAME_MAX_LENGTH)];
     
     fService = [[NSNetService alloc] initWithDomain: @"" type: @"_http._tcp." name: serviceName port: port];
     [fService setDelegate: self];

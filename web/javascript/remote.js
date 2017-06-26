@@ -113,7 +113,7 @@ TransmissionRemote.prototype =
 		var o = {
 			method: 'torrent-get',
 				'arguments': {
-				'fields': fields,
+				'fields': fields
 			}
 		};
 		if (torrentIds)
@@ -132,7 +132,7 @@ TransmissionRemote.prototype =
 			arguments: args,
 			method: 'torrent-set'
 		}, function() {
-			remote._controller.refreshTorrents(torrent_ids);
+			remote._controller.refreshTorrents([torrentId]);
 		});
 	},
 
@@ -157,6 +157,13 @@ TransmissionRemote.prototype =
 	stopTorrents: function(torrent_ids, callback, context) {
 		this.sendTorrentActionRequests('torrent-stop', torrent_ids, callback, context);
 	},
+
+	moveTorrents: function(torrent_ids, new_location, callback, context) {
+		var remote = this;
+		this.sendTorrentSetRequests( 'torrent-set-location', torrent_ids, 
+			{"move": true, "location": new_location}, callback, context);
+	},
+
 	removeTorrents: function(torrent_ids, callback, context) {
 		this.sendTorrentActionRequests('torrent-remove', torrent_ids, callback, context);
 	},

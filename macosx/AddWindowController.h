@@ -1,7 +1,7 @@
 /******************************************************************************
- * $Id: AddWindowController.h 11617 2011-01-01 20:42:14Z livings124 $
+ * $Id: AddWindowController.h 13602 2012-10-30 00:22:10Z livings124 $
  *
- * Copyright (c) 2008-2011 Transmission authors and contributors
+ * Copyright (c) 2008-2012 Transmission authors and contributors
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
@@ -23,6 +23,7 @@
  *****************************************************************************/
 
 #import <Cocoa/Cocoa.h>
+#import "Torrent.h"
 
 @class Controller;
 @class FileOutlineController;
@@ -36,7 +37,11 @@
     IBOutlet NSPopUpButton * fGroupPopUp, * fPriorityPopUp;
     IBOutlet NSProgressIndicator * fVerifyIndicator;
     
+    IBOutlet NSTextField * fFileFilterField;
+    IBOutlet NSButton * fCheckAllButton, *fUncheckAllButton;
+    
     IBOutlet FileOutlineController * fFileController;
+    IBOutlet NSScrollView * fFileScrollView;
     
     Controller * fController;
     
@@ -44,15 +49,17 @@
     NSString * fDestination, * fTorrentFile;
     BOOL fLockDestination;
     
-    BOOL fDeleteTorrentInitial, fDeleteEnableInitial;
+    BOOL fDeleteTorrentEnableInitially, fCanToggleDelete;
     NSInteger fGroupValue;
     
     NSTimer * fTimer;
+	
+    TorrentDeterminationType fGroupValueDetermination;
 }
 
 - (id) initWithTorrent: (Torrent *) torrent destination: (NSString *) path lockDestination: (BOOL) lockDestination
     controller: (Controller *) controller torrentFile: (NSString *) torrentFile
-    deleteTorrent: (BOOL) deleteTorrent canToggleDelete: (BOOL) canToggleDelete;
+    deleteTorrentCheckEnableInitially: (BOOL) deleteTorrent canToggleDelete: (BOOL) canToggleDelete; //if canToggleDelete is NO, we will also not delete the file regardless of the delete check's state (this is so it can be disabled and checked for a downloaded torrent, where the file's already deleted)
 
 - (Torrent *) torrent;
 
@@ -61,11 +68,15 @@
 - (void) add: (id) sender;
 - (void) cancelAdd: (id) sender;
 
+- (IBAction) setFileFilterText: (id) sender;
+- (IBAction) checkAll: (id) sender;
+- (IBAction) uncheckAll: (id) sender;
+
 - (void) verifyLocalData: (id) sender;
 
 - (void) changePriority: (id) sender;
 
-- (void) updateStatusField: (NSNotification *) notification;
+- (void) updateCheckButtons: (NSNotification *) notification;
 
 - (void) updateGroupMenu: (NSNotification *) notification;
 
