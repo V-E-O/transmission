@@ -497,15 +497,46 @@ AC_CONFIG_FILES([Makefile
                  gtk/icons/Makefile
                  qt/config.pri
                  web/Makefile
+                 web/advanced/Makefile
+                 web/advanced/images/Makefile
+                 web/advanced/javascript/Makefile
+                 web/advanced/javascript/jquery/Makefile
+                 web/advanced/style/Makefile
+                 web/advanced/style/jqueryui/Makefile
+                 web/advanced/style/jqueryui/images/Makefile
+                 web/advanced/style/transmission/Makefile
+                 web/advanced/style/transmission/images/Makefile
+                 web/advanced/style/transmission/images/buttons/Makefile
+                 web/experimental/Makefile
+                 web/experimental/images/Makefile
+                 web/experimental/javascript/Makefile
+                 web/experimental/javascript/jquery/Makefile
+                 web/experimental/style/Makefile
+                 web/experimental/style/jqueryui/Makefile
+                 web/experimental/style/jqueryui/images/Makefile
+                 web/experimental/style/transmission/Makefile
+                 web/experimental/style/transmission/images/Makefile
+                 web/experimental/style/transmission/images/buttons/Makefile
+                 web/groups/Makefile
+                 web/groups/images/Makefile
+                 web/groups/javascript/Makefile
+                 web/groups/javascript/jquery/Makefile
+                 web/groups/style/Makefile
+                 web/groups/style/jqueryui/Makefile
+                 web/groups/style/jqueryui/images/Makefile
+                 web/groups/style/transmission/Makefile
+                 web/groups/style/transmission/images/Makefile
+                 web/groups/style/transmission/images/buttons/Makefile
                  web/images/Makefile
+                 web/javascript/Makefile
+                 web/javascript/jquery/Makefile
+                 web/shifttq/Makefile
                  web/style/Makefile
                  web/style/jqueryui/Makefile
                  web/style/jqueryui/images/Makefile
                  web/style/transmission/Makefile
                  web/style/transmission/images/Makefile
                  web/style/transmission/images/buttons/Makefile
-                 web/javascript/Makefile
-                 web/javascript/jquery/Makefile
                  po/Makefile.in])
 
 AC_OUTPUT
